@@ -1,0 +1,42 @@
+# Entorno
+.env
+.env.local
+
+# Dependencias
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build
+dist/
+*.tsbuildinfo
+data/static
+data/frontend-*
+data/*BK
+
+# Datos persistentes
+data/mongodb
+*.data
+
+# Docker
+.dockerignore
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+**.bk
+
+.claude

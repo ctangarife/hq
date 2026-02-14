@@ -1,0 +1,185 @@
+# ==============================================================================
+# HQ - AI Agent Headquarters
+# Docker Compose Orchestration
+# ==============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # MONGODB - Base de datos
+  # ---------------------------------------------------------------------------
+  mongodb:
+    image: mongo:8
+    container_name: hq-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - agent_workspace:/data/agent-workspace
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hq-network
+
+  # ---------------------------------------------------------------------------
+  # API BACKEND - Node.js/Express
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: hq-api
+    restart: unless-stopped
+    environment:
+      # MongoDB
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: 27017
+      MONGODB_USERNAME: ${MONGODB_ROOT_USERNAME}
+      MONGODB_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+      MONGODB_DATABASE: ${MONGODB_DATABASE}
+      # HQ API Config
+      API_PORT: ${API_PORT}
+      API_JWT_SECRET: ${API_JWT_SECRET}
+      UI_SECRET: ${UI_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      HQ_API_URL: ${HQ_API_URL}
+      HQ_API_TOKEN: ${HQ_API_TOKEN}
+      # Docker Engine API
+      DOCKER_HOST: unix:///var/run/docker.sock
+      DOCKER_SOCKET: /var/run/docker.sock
+      # Agent Config
+      AGENT_BASE_IMAGE: ${AGENT_BASE_IMAGE}
+      AGENT_NETWORK: ${AGENT_NETWORK}
+      AGENT_WORKSPACE_PATH: ${AGENT_WORKSPACE_PATH}
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL}
+      TELEGRAM_NOTIFICATION_CHAT_ID: ${TELEGRAM_NOTIFICATION_CHAT_ID}
+      # LLM Providers - API Keys para credenciales
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL}
+      ZAI_API_KEY: ${ZAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Config Service - Credenciales encriptadas
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_CONSOLE: ${LOG_CONSOLE}
+    ports:
+      - "${API_PORT}:3001"
+    volumes:
+      # Código fuente para hot-reload en desarrollo
+      - ./api/src:/app/src
+      # Docker socket para gestión de contenedores
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Workspace compartido con agentes
+      - agent_workspace:${AGENT_WORKSPACE_PATH}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+    networks:
+      - hq-network
+
+  # ---------------------------------------------------------------------------
+  # FRONTEND - Vue 3 Dashboard (Build estático)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./build/frontend
+      dockerfile: Dockerfile
+    container_name: hq-frontend
+    volumes:
+      # Código fuente
+      - ./data/frontend:/app
+      # Archivos estáticos compilados (para nginx)
+      - ./data/static:/app/dist
+    environment:
+      # API URL
+      VITE_API_URL: ${NEXT_PUBLIC_API_URL}
+    command: sh -c "npm install && npm ci && NODE_ENV=production npm run build --max-old-space-size=4096 && sleep 2 && cp -r /app/dist/* /usr/share/nginx/html/frontend/"
+    networks:
+      - hq-network
+
+  # ---------------------------------------------------------------------------
+  # NGINX - Reverse Proxy + Static file server
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: hq-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HOST_PORT}:80"
+      - "${NGINX_HEALTH_PORT}:8080"
+    volumes:
+      # Configuración de nginx
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # Archivos estáticos del frontend
+      - ./data/static:/usr/share/nginx/html/frontend:rw
+    depends_on:
+      - api
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/nginx-health"]
+      interval: 30s
+      timeout: 5s
+    networks:
+      - hq-network
+
+  # ---------------------------------------------------------------------------
+  # AGENT BROWSER - Puppeteer automation (desde OpenClaw)
+  # ---------------------------------------------------------------------------
+  agent-browser:
+    build:
+      context: ./build/agent-browser
+      dockerfile: Dockerfile
+    container_name: hq-agent-browser-${AGENT_ID}
+    restart: unless-stopped
+    environment:
+      BROWSER_PORT: 9222
+    volumes:
+      - agent_browser_workspace:/home/node/.openclaw/workspace/agent-browser:rw
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9222/health"]
+      interval: 30s
+      timeout: 10s
+    networks:
+      - hq-network
+
+  # ---------------------------------------------------------------------------
+  # VOLUMES - Datos persistentes
+  # ---------------------------------------------------------------------------
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  agent_workspace:
+    driver: local
+  agent_browser_workspace:
+    driver: local
+
+  # ---------------------------------------------------------------------------
+  # NETWORKS - Redes Docker
+  # ---------------------------------------------------------------------------
+networks:
+  # Red principal de HQ
+  hq-network:
+    driver: bridge
+  # Red donde se conectan los agentes (permite comunicación con Docker)
+  agent-network:
+    driver: bridge
+    name: ${AGENT_NETWORK}
