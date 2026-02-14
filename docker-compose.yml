@@ -109,7 +109,7 @@ services:
     environment:
       # API URL
       VITE_API_URL: ${NEXT_PUBLIC_API_URL}
-    command: sh -c "npm install && npm ci && NODE_ENV=production npm run build --max-old-space-size=4096 && sleep 2 && cp -r /app/dist/* /usr/share/nginx/html/frontend/"
+    command: sh -c "npm install && npm ci && NODE_ENV=production npm run build --max-old-space-size=4096"
     networks:
       - hq-network
 
