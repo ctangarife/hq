@@ -1,6 +1,14 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
-export type TaskType = 'web_search' | 'data_analysis' | 'content_generation' | 'code_execution' | 'custom'
+export type TaskType =
+  | 'web_search'
+  | 'data_analysis'
+  | 'content_generation'
+  | 'code_execution'
+  | 'custom'
+  | 'mission_analysis'   // Squad Lead analyzes mission
+  | 'agent_creation'     // Create specialized agent
+  | 'coordination'       // Squad Lead coordinates agents
 
 export interface ITask extends Document {
   missionId: string
@@ -26,7 +34,16 @@ const taskSchema = new Schema<ITask>({
   description: { type: String, default: '' },
   type: {
     type: String,
-    enum: ['web_search', 'data_analysis', 'content_generation', 'code_execution', 'custom'],
+    enum: [
+      'web_search',
+      'data_analysis',
+      'content_generation',
+      'code_execution',
+      'custom',
+      'mission_analysis',
+      'agent_creation',
+      'coordination'
+    ],
     default: 'custom'
   },
   assignedTo: { type: String },

@@ -30,6 +30,7 @@ const providerKeys = {
   zai: process.env.ZAI_API_KEY,
   anthropic: process.env.ANTHROPIC_API_KEY,
   openai: process.env.OPENAI_API_KEY,
+  minimax: process.env.MINIMAX_API_KEY,
 };
 
 // Obtener API key para el provider
@@ -72,6 +73,18 @@ const providers = {
 
   openai: {
     baseUrl: 'https://api.openai.com/v1/chat/completions',
+    getHeaders: (apiKey) => ({
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }),
+    formatPayload: (model, messages) => ({
+      model,
+      messages
+    })
+  },
+
+  minimax: {
+    baseUrl: 'https://api.minimax.io/v1/chat/completions',
     getHeaders: (apiKey) => ({
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
@@ -187,6 +200,11 @@ Responde de manera concisa y útil.`
       // Marcar tarea como in_progress
       await this.updateTaskStatus(task._id, 'in_progress');
 
+      // Special handling for mission_analysis tasks (Squad Lead)
+      if (task.type === 'mission_analysis') {
+        return await this.executeMissionAnalysis(task, startTime);
+      }
+
       // Construir prompt con la tarea
       const taskPrompt = this.buildTaskPrompt(task);
       const response = await this.sendMessage(taskPrompt);
@@ -215,6 +233,126 @@ Responde de manera concisa y útil.`
 
       return false;
     }
+  }
+
+  // Ejecutar tarea de análisis de misión (Squad Lead)
+  async executeMissionAnalysis(task, startTime) {
+    console.log('🎯 Ejecutando análisis de misión (Squad Lead)...');
+
+    // Construir prompt especial para Squad Lead
+    const taskPrompt = this.buildTaskPrompt(task) + `
+
+IMPORTANT: You must respond with a valid JSON object following this exact schema:
+{
+  "complexity": "low|medium|high|critical",
+  "summary": "Brief summary of the mission",
+  "estimatedDuration": 123,
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Task title",
+      "description": "Detailed description",
+      "type": "web_search|data_analysis|content_generation|code_execution|custom",
+      "dependencies": [],
+      "priority": "high|medium|low",
+      "estimatedDuration": 45,
+      "assignedAgentRole": "researcher|developer|writer|analyst"
+    }
+  ],
+  "agents": [
+    {
+      "id": "agent-1",
+      "name": "Agent name",
+      "role": "researcher|developer|writer|analyst",
+      "template": "researcher|developer|writer|analyst",
+      "capabilities": ["capability1", "capability2"]
+    }
+  ],
+  "dependencies": [
+    {"taskId": "task-2", "dependsOn": ["task-1"]}
+  ],
+  "riskFactors": ["risk1"],
+  "recommendations": ["recommendation1"]
+}
+
+Respond ONLY with the JSON object, no additional text.`;
+
+    const response = await this.sendMessage(taskPrompt);
+
+    console.log('');
+    console.log(`💡 Squad Lead Response (${Math.round((Date.now() - startTime) / 1000)}s):`);
+    console.log(response);
+    console.log('');
+
+    // Try to extract JSON from response
+    let jsonOutput;
+    try {
+      // First try: direct parse
+      jsonOutput = JSON.parse(response);
+    } catch (e) {
+      // Second try: extract JSON from markdown code blocks
+      const jsonMatch = response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+      if (jsonMatch) {
+        jsonOutput = JSON.parse(jsonMatch[1]);
+      } else {
+        // Third try: extract JSON object from anywhere in response
+        const objectMatch = response.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+          jsonOutput = JSON.parse(objectMatch[0]);
+        } else {
+          throw new Error('Could not extract valid JSON from response');
+        }
+      }
+    }
+
+    // Validate the JSON structure
+    if (!jsonOutput.tasks || !Array.isArray(jsonOutput.tasks)) {
+      throw new Error('Invalid output: tasks array is required');
+    }
+    if (!jsonOutput.agents || !Array.isArray(jsonOutput.agents)) {
+      throw new Error('Invalid output: agents array is required');
+    }
+
+    console.log('✅ Valid JSON received from Squad Lead');
+    console.log(`   Complexity: ${jsonOutput.complexity}`);
+    console.log(`   Tasks: ${jsonOutput.tasks.length}`);
+    console.log(`   Agents: ${jsonOutput.agents.length}`);
+
+    // First complete the task
+    await this.completeTask(task._id, {
+      success: true,
+      result: jsonOutput,
+      duration: Date.now() - startTime
+    });
+
+    // Then auto-process the Squad Lead output
+    try {
+      await this.processSquadOutput(task._id, jsonOutput);
+      console.log('✅ Squad Lead output processed successfully');
+    } catch (processError) {
+      console.error(`⚠️ Failed to process Squad Lead output: ${processError.message}`);
+    }
+
+    return true;
+  }
+
+  // Procesar output del Squad Lead llamando al endpoint especial
+  async processSquadOutput(taskId, output) {
+    const response = await fetch(`${this.config.hqApiUrl}/tasks/${taskId}/process-squad-output`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.HQ_API_TOKEN || 'hq-token'}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ output })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to process squad output: ${error}`);
+    }
+
+    return await response.json();
   }
 
   // Construir prompt para la tarea

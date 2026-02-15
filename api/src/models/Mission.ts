@@ -10,6 +10,15 @@ export interface IMission extends Document {
   taskIds: mongoose.Types.ObjectId[]
   startedAt?: Date
   completedAt?: Date
+  // Orchestration fields for Squad Lead flow
+  squadLeadId?: string
+  autoOrchestrate: boolean
+  initialAnalysisTaskId?: string
+  orchestrationLog: Array<{
+    timestamp: Date
+    action: string
+    details: Record<string, any>
+  }>
   createdAt: Date
   updatedAt: Date
 }
@@ -31,9 +40,21 @@ const missionSchema = new Schema<IMission>({
   squadIds: [{ type: Schema.Types.ObjectId, ref: 'Agent' }],
   taskIds: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
   startedAt: { type: Date },
-  completedAt: { type: Date }
+  completedAt: { type: Date },
+  // Orchestration fields for Squad Lead flow
+  squadLeadId: { type: String },
+  autoOrchestrate: { type: Boolean, default: false },
+  initialAnalysisTaskId: { type: String },
+  orchestrationLog: [{
+    timestamp: { type: Date, default: Date.now },
+    action: { type: String, required: true },
+    details: { type: Schema.Types.Mixed, default: {} }
+  }]
 }, {
   timestamps: true
 })
+
+// Index for orchestration queries
+missionSchema.index({ squadLeadId: 1, status: 1 })
 
 export default mongoose.model<IMission>('Mission', missionSchema)

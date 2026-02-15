@@ -11,6 +11,58 @@ Sistema de gestión de squads de agentes de IA para coordinación y ejecución d
 - **Auto-deployment** - Cada agente en su propio contenedor Docker
 - **Dashboard Integrado** - Panel único de control centralizado
 
+## Orquestación Automática con Squad Lead
+
+HQ implementa un sistema de orquestación jerárquico donde un agente **Squad Lead** analiza misiones y coordina equipos de agentes especializados.
+
+### Flujo de Orquestación
+
+```
+1. Usuario crea MISIÓN (status: 'draft')
+   ↓
+2. Usuario llama POST /api/missions/:id/orchestrate
+   ↓
+3. Sistema selecciona/crea SQUAD LEAD
+   ↓
+4. Sistema crea TAREA_INICIAL "Analyze Mission"
+   ↓
+5. SQUAD LEAD ejecuta tarea → responde con JSON plan
+   ↓
+6. Sistema procesa plan → crea AGENTES y TAREAS
+   ↓
+7. AGENTES especializados ejecutan tareas (polling)
+   ↓
+8. Sistema detecta misión completada → marca 'completed'
+   ↓
+9. SQUAD LEAD se libera (vuelve a idle)
+```
+
+### Templates de Agentes
+
+| Template | Rol | Capacidades | LLM |
+|----------|-----|-------------|------|
+| squad_lead | squad_lead | mission_analysis, task_planning, agent_coordination | glm-4-plus |
+| researcher | researcher | web_search, data_analysis, fact_checking | glm-4 |
+| developer | developer | code_execution, code_review, debugging | glm-4 |
+| writer | writer | content_generation, editing, documentation | glm-4 |
+| analyst | analyst | data_analysis, statistics, reporting | glm-4 |
+
+### API de Orquestación
+
+```bash
+# Iniciar orquestación automática
+curl -X POST http://localhost:3001/api/missions/{missionId}/orchestrate \
+  -H "Authorization: Bearer hq-agent-token"
+
+# Ver log de orquestación
+curl http://localhost:3001/api/missions/{missionId} \
+  -H "Authorization: Bearer hq-agent-token" | jq '.orchestrationLog'
+```
+
+### Documentación Completa
+
+Para más detalles sobre el flujo de Squad Lead, ver [doc/SQUAD_LEAD_FLOW.md](./doc/SQUAD_LEAD_FLOW.md)
+
 ## Arquitectura
 
 ```
@@ -138,6 +190,7 @@ db.tasks.find()
 | GET | `/api/health` | Health check |
 | GET | `/api/missions` | Listar misiones |
 | POST | `/api/missions` | Crear misión |
+| POST | `/api/missions/:id/orchestrate` | Iniciar orquestación automática |
 | GET | `/api/agents` | Listar agentes |
 | POST | `/api/agents` | Crear agente |
 | POST | `/api/agents/:id/deploy` | Desplegar contenedor de agente |
@@ -149,6 +202,14 @@ db.tasks.find()
 | POST | `/api/tasks/:id/start` | Marcar tarea en progreso |
 | POST | `/api/tasks/:id/complete` | Completar tarea con resultado |
 | POST | `/api/tasks/:id/fail` | Marcar tarea como fallida |
+| GET | `/api/providers` | Listar todos los providers |
+| GET | `/api/providers/enabled` | Listar providers activados |
+| POST | `/api/providers` | Crear/actualizar provider |
+| PUT | `/api/providers/:providerId` | Actualizar provider |
+| DELETE | `/api/providers/:providerId` | Eliminar provider |
+| POST | `/api/providers/:providerId/toggle` | Activar/desactivar provider |
+| GET | `/api/providers/:providerId/models` | Listar modelos de un provider |
+| POST | `/api/providers/refresh-all` | Refrescar todos los modelos |
 | GET | `/api/activity` | Listar actividad |
 | GET | `/api/activity/stream` | SSE stream de actividad |
 | POST | `/api/telegram/webhook` | Webhook de Telegram |
@@ -197,14 +258,83 @@ ZAI_API_ENDPOINT=https://open.bigmodel.cn/api/paas/v4/
 
 | Proveedor | Modelos |
 |-----------|---------|
-| Anthropic | claude-3.5-haiku, claude-3.5-sonnet |
-| OpenAI | gpt-4, gpt-4-turbo, o1, o3-mini |
-| Google | gemini-2.0-flash, gemini-1.5-pro |
-| MiniMax | abab6.5s, abab6-chat |
-| Moonshot | moonshot-v1-8k |
-| Synthenic | claude-3.5-sonnet |
-| Ollama | llama3.2, mistral, codexlama |
-| OpenCode | open-codex-llm-7b |
+| Anthropic | claude-3.5-haiku, claude-3.5-sonnet, claude-3-opus |
+| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo, o3-mini |
+| Google | gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash |
+| Ollama | llama3.2, mistral, codellama |
+
+### Gestión de Providers y Modelos
+
+Los providers se gestionan dinámicamente desde MongoDB. Los modelos se obtienen en tiempo real desde cada provider API y se cachean por 1 hora.
+
+```bash
+# 1. Listar todos los providers
+curl http://localhost:3001/api/providers \
+  -H "Authorization: Bearer hq-agent-token"
+
+# 2. Obtener solo providers activados
+curl http://localhost:3001/api/providers/enabled \
+  -H "Authorization: Bearer hq-agent-token"
+
+# 3. Listar modelos de un provider (usa caché de 1 hora)
+curl http://localhost:3001/api/providers/zai/models \
+  -H "Authorization: Bearer hq-agent-token"
+
+# 4. Forzar refresco de modelos desde el API del provider
+curl "http://localhost:3001/api/providers/zai/models?refresh=true" \
+  -H "Authorization: Bearer hq-agent-token"
+
+# 5. Activar/desactivar un provider
+curl -X POST http://localhost:3001/api/providers/openai/toggle \
+  -H "Authorization: Bearer hq-agent-token" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+
+# 6. Refrescar todos los providers
+curl -X POST http://localhost:3001/api/providers/refresh-all \
+  -H "Authorization: Bearer hq-agent-token"
+```
+
+### Crear Agente con Provider y Modelo
+
+```bash
+curl -X POST http://localhost:3001/api/agents \
+  -H "Authorization: Bearer hq-agent-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mi Agente",
+    "role": "researcher",
+    "provider": "zai",
+    "llmModel": "glm-4-flash",
+    "personality": "Eres un asistente de investigación útil."
+  }'
+```
+
+### Providers Configurados por Defecto
+
+| Provider ID | Nombre | Tipo | Estado | Endpoint |
+|-------------|--------|------|--------|----------|
+| `zai` | Z.ai (Zhipu AI) | openai | ✅ Activo | https://open.bigmodel.cn/api/paas/v4 |
+| `minimax` | MiniMax | openai | ❌ Inactivo | https://api.minimax.io/v1 |
+| `anthropic` | Anthropic (Claude) | anthropic | ❌ Inactivo | https://api.anthropic.com |
+| `openai` | OpenAI | openai | ❌ Inactivo | https://api.openai.com/v1 |
+| `google` | Google (Gemini) | openai | ❌ Inactivo | https://generativelanguage.googleapis.com/v1beta |
+| `ollama` | Ollama (Local) | ollama | ❌ Inactivo | http://localhost:11434 |
+
+**Nota:** Para usar otros providers, actívalos desde MongoDB o la API y configura sus API keys.
+
+### Modelos MiniMax Disponibles
+
+| Modelo | Descripción | Contexto |
+|--------|-------------|----------|
+| `mini-max-m2.5` | Latest flagship, optimizado para coding (Feb 2026) | 128K |
+| `mini-max-m2.1` | Multi-language coding, app/web dev | 128K |
+| `mini-max-m2-her` | 10B activated parameters | 128K |
+| `mini-max-m1-80k` | 456B MoE, 80K thinking, 1M context | 1M |
+| `mini-max-m1-40k` | Smaller context variant | 128K |
+| `mini-max-hailuo-2.3` | Hailuo model | 32K |
+| `abab6.5s-chat` | Legacy chat model | 32K |
+| `abab6-chat` | Legacy chat model | 32K |
 
 ## Seguridad
 

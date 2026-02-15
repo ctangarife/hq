@@ -1,6 +1,7 @@
 import { Router, Response } from 'express'
 import Agent from '../models/Agent.js'
 import { dockerService } from '../services/docker.service.js'
+import { getModelInfo, getProviderModels } from '../config/provider-models.js'
 
 const router = Router()
 
@@ -30,6 +31,19 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/agents - Create agent and deploy container
 router.post('/', async (req, res, next) => {
   try {
+    const { provider, llmModel } = req.body
+
+    // Validate provider/model combination if both are provided
+    if (provider && llmModel) {
+      const modelInfo = getModelInfo(provider, llmModel)
+      if (!modelInfo) {
+        return res.status(400).json({
+          error: `Invalid model "${llmModel}" for provider "${provider}"`,
+          hint: `Use GET /api/models/providers/${provider}/models to list available models`
+        })
+      }
+    }
+
     // 1. Crear agente en MongoDB
     const agent = new Agent({
       name: req.body.name,

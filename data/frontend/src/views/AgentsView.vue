@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { agentsService } from "@/services/api";
+import { ref, onMounted, watch } from "vue";
+import { agentsService, providersService } from "@/services/api";
 
 interface Agent {
   _id: string;
@@ -14,6 +14,23 @@ interface Agent {
   status: string;
 }
 
+interface Provider {
+  _id: string;
+  providerId: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  apiEndpoint?: string;
+  defaultModel?: string;
+}
+
+interface Model {
+  id: string;
+  name: string;
+  description?: string;
+  contextLength?: number;
+}
+
 const agents = ref<Agent[]>([]);
 const loading = ref(true);
 const showCreateModal = ref(false);
@@ -21,16 +38,19 @@ const showEditModal = ref(false);
 const editingAgent = ref<Agent | null>(null);
 const submitting = ref(false);
 
+// Providers and models
+const providers = ref<Provider[]>([]);
+const providerModels = ref<Model[]>([]);
+const loadingModels = ref(false);
+
 const formData = ref({
   name: "",
   role: "Developer",
   personality: "",
-  llmModel: "glm-4.7",
-  provider: "zai",
+  provider: "",
+  llmModel: "",
   apiKey: "",
 });
-//CACHE_BUSTER_123456789
-console.log("CACHE BUSTED");
 
 async function fetchAgents() {
   try {
@@ -44,26 +64,67 @@ async function fetchAgents() {
   }
 }
 
+async function fetchEnabledProviders() {
+  try {
+    const response = await providersService.getAll();
+    providers.value = response.data.filter((p: Provider) => p.enabled);
+  } catch (err) {
+    console.error("Failed to fetch providers:", err);
+  }
+}
+
+async function fetchProviderModels(providerId: string) {
+  if (!providerId) {
+    providerModels.value = [];
+    return;
+  }
+
+  try {
+    loadingModels.value = true;
+    const response = await providersService.getModels(providerId, false);
+    providerModels.value = response.data.models;
+
+    // Set default model if current one is not in list
+    if (providerModels.value.length > 0 && !providerModels.value.find(m => m.id === formData.value.llmModel)) {
+      const provider = providers.value.find(p => p.providerId === providerId);
+      formData.value.llmModel = provider?.defaultModel || providerModels.value[0].id;
+    }
+  } catch (err) {
+    console.error("Failed to fetch models:", err);
+    providerModels.value = [];
+  } finally {
+    loadingModels.value = false;
+  }
+}
+
+// Watch provider changes to fetch models
+watch(() => formData.value.provider, (newProvider) => {
+  if (newProvider) {
+    fetchProviderModels(newProvider);
+  } else {
+    providerModels.value = [];
+    formData.value.llmModel = "";
+  }
+});
+
 function resetForm() {
   formData.value = {
     name: "",
     role: "Developer",
     personality: "",
-    llmModel: "glm-4.7",
-    provider: "zai",
+    provider: "",
+    llmModel: "",
     apiKey: "",
   };
-}
-
-// TEST FUNCTION - should trigger rebuild
-function testRebuild() {
-  console.log("Testing rebuild trigger");
-  return true;
+  providerModels.value = [];
 }
 
 function openCreateModal() {
   resetForm();
-  testRebuild();
+  // Set first provider as default
+  if (providers.value.length > 0) {
+    formData.value.provider = providers.value[0].providerId;
+  }
   showCreateModal.value = true;
 }
 
@@ -73,10 +134,14 @@ function openEditModal(agent: Agent) {
     name: agent.name,
     role: agent.role,
     personality: agent.personality || "",
-    llmModel: agent.llmModel || "glm-4.7",
-    provider: agent.provider || "zai",
+    provider: agent.provider || "",
+    llmModel: agent.llmModel || "",
     apiKey: agent.apiKey || "",
   };
+  // Fetch models for this agent's provider
+  if (agent.provider) {
+    fetchProviderModels(agent.provider);
+  }
   showEditModal.value = true;
 }
 
@@ -94,8 +159,9 @@ async function createAgent() {
     showCreateModal.value = false;
     resetForm();
     await fetchAgents();
-  } catch (err) {
-    alert("Error creating agent");
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.error || err.message || "Unknown error";
+    alert(`Error creating agent: ${errorMsg}`);
   } finally {
     submitting.value = false;
   }
@@ -121,8 +187,9 @@ async function updateAgent() {
     editingAgent.value = null;
     resetForm();
     await fetchAgents();
-  } catch (err) {
-    alert("Error updating agent");
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.error || err.message || "Unknown error";
+    alert(`Error updating agent: ${errorMsg}`);
   } finally {
     submitting.value = false;
   }
@@ -133,8 +200,9 @@ async function deleteAgent(id: string) {
   try {
     await agentsService.delete(id);
     await fetchAgents();
-  } catch (err) {
-    alert("Error deleting agent");
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.error || err.message || "Unknown error";
+    alert(`Error deleting agent: ${errorMsg}`);
   }
 }
 
@@ -142,8 +210,9 @@ async function deployAgent(id: string) {
   try {
     await agentsService.deploy(id);
     await fetchAgents();
-  } catch (err) {
-    alert("Error deploying agent");
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.error || err.message || "Unknown error";
+    alert(`Error deploying agent: ${errorMsg}`);
   }
 }
 
@@ -152,13 +221,15 @@ async function destroyContainer(id: string) {
   try {
     await agentsService.destroyContainer(id);
     await fetchAgents();
-  } catch (err) {
-    alert("Error destroying container");
+  } catch (err: any) {
+    const errorMsg = err.response?.data?.error || err.message || "Unknown error";
+    alert(`Error destroying container: ${errorMsg}`);
   }
 }
 
 onMounted(() => {
   fetchAgents();
+  fetchEnabledProviders();
 });
 </script>
 
@@ -168,13 +239,22 @@ onMounted(() => {
       <h1 class="text-3xl font-bold text-white">Agents</h1>
       <button
         @click="openCreateModal()"
-        class="px-4 py-2 bg-green-600 text-white rounded"
+        :disabled="providers.length === 0"
+        class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed"
+        :title="providers.length === 0 ? 'Enable a provider first' : ''"
       >
         + New Agent
       </button>
     </header>
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Loading...</div>
+
+    <div v-else-if="providers.length === 0" class="text-center py-12 bg-gray-800 rounded-lg border border-gray-700">
+      <p class="text-gray-400 mb-4">No providers enabled. Enable a provider first to create agents.</p>
+      <router-link to="/providers" class="px-4 py-2 bg-blue-600 text-white rounded">
+        Go to Providers
+      </router-link>
+    </div>
 
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div
@@ -197,7 +277,8 @@ onMounted(() => {
         </p>
 
         <div class="text-sm text-gray-500 mb-4">
-          Model: {{ agent.llmModel || "N/A" }} ({{ agent.provider || "N/A" }})
+          <div>Provider: <span class="text-gray-300">{{ agent.provider || "N/A" }}</span></div>
+          <div>Model: <span class="text-gray-300">{{ agent.llmModel || "N/A" }}</span></div>
         </div>
 
         <div v-if="agent.containerId" class="text-xs bg-gray-900 rounded p-2 mb-4">
@@ -245,17 +326,18 @@ onMounted(() => {
         <h2 class="text-xl font-bold text-white mb-4">New Agent</h2>
         <form @submit.prevent="createAgent()" class="space-y-4">
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Name *</label
-            ><input
+            <label class="block text-gray-400 text-sm mb-1">Name *</label>
+            <input
               v-model="formData.name"
               type="text"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               required
             />
           </div>
+
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Role *</label
-            ><select
+            <label class="block text-gray-400 text-sm mb-1">Role *</label>
+            <select
               v-model="formData.role"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
             >
@@ -264,24 +346,49 @@ onMounted(() => {
               <option>Squad Lead</option>
               <option>Writer</option>
               <option>Designer</option>
+              <option>Analyst</option>
             </select>
           </div>
+
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Personality</label
-            ><textarea
+            <label class="block text-gray-400 text-sm mb-1">Provider *</label>
+            <select
+              v-model="formData.provider"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              required
+            >
+              <option value="">Select a provider</option>
+              <option v-for="provider in providers" :key="provider.providerId" :value="provider.providerId">
+                {{ provider.name }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="formData.provider">
+            <label class="block text-gray-400 text-sm mb-1">Model *</label>
+            <select
+              v-model="formData.llmModel"
+              :disabled="loadingModels"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              required
+            >
+              <option value="">Select a model</option>
+              <option v-for="model in providerModels" :key="model.id" :value="model.id">
+                {{ model.name }}
+              </option>
+            </select>
+            <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading models...</p>
+          </div>
+
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Personality</label>
+            <textarea
               v-model="formData.personality"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               rows="3"
             ></textarea>
           </div>
-          <div>
-            <label class="block text-gray-400 text-sm mb-1">API Key (optional)</label
-            ><input
-              v-model="formData.apiKey"
-              type="password"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-            />
-          </div>
+
           <div class="flex gap-2 justify-end">
             <button
               type="button"
@@ -292,8 +399,8 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              :disabled="submitting"
-              class="px-4 py-2 bg-green-600 text-white rounded"
+              :disabled="submitting || !formData.llmModel"
+              class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600"
             >
               {{ submitting ? "Creating..." : "Create" }}
             </button>
@@ -314,17 +421,18 @@ onMounted(() => {
         </p>
         <form @submit.prevent="updateAgent()" class="space-y-4">
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Name *</label
-            ><input
+            <label class="block text-gray-400 text-sm mb-1">Name *</label>
+            <input
               v-model="formData.name"
               type="text"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               required
             />
           </div>
+
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Role *</label
-            ><select
+            <label class="block text-gray-400 text-sm mb-1">Role *</label>
+            <select
               v-model="formData.role"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
             >
@@ -333,24 +441,49 @@ onMounted(() => {
               <option>Squad Lead</option>
               <option>Writer</option>
               <option>Designer</option>
+              <option>Analyst</option>
             </select>
           </div>
+
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Personality</label
-            ><textarea
+            <label class="block text-gray-400 text-sm mb-1">Provider *</label>
+            <select
+              v-model="formData.provider"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              required
+            >
+              <option value="">Select a provider</option>
+              <option v-for="provider in providers" :key="provider.providerId" :value="provider.providerId">
+                {{ provider.name }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="formData.provider">
+            <label class="block text-gray-400 text-sm mb-1">Model *</label>
+            <select
+              v-model="formData.llmModel"
+              :disabled="loadingModels"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              required
+            >
+              <option value="">Select a model</option>
+              <option v-for="model in providerModels" :key="model.id" :value="model.id">
+                {{ model.name }}
+              </option>
+            </select>
+            <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading models...</p>
+          </div>
+
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Personality</label>
+            <textarea
               v-model="formData.personality"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
               rows="3"
             ></textarea>
           </div>
-          <div>
-            <label class="block text-gray-400 text-sm mb-1">API Key (optional)</label
-            ><input
-              v-model="formData.apiKey"
-              type="password"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-            />
-          </div>
+
           <div class="flex gap-2 justify-end">
             <button
               type="button"
@@ -364,10 +497,10 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              :disabled="submitting"
-              class="px-4 py-2 bg-purple-600 text-white rounded"
+              :disabled="submitting || !formData.llmModel"
+              class="px-4 py-2 bg-purple-600 text-white rounded disabled:bg-gray-600"
             >
-              Save
+              {{ submitting ? "Saving..." : "Save" }}
             </button>
           </div>
         </form>
@@ -375,4 +508,3 @@ onMounted(() => {
     </div>
   </div>
 </template>
-# Force cache bust 1771085058

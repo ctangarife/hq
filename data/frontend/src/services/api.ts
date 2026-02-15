@@ -24,7 +24,8 @@ export const missionsService = {
   getById: (id: string) => api.get(`/missions/${id}`),
   create: (data: any) => api.post('/missions', data),
   update: (id: string, data: any) => api.put(`/missions/${id}`, data),
-  delete: (id: string) => api.delete(`/missions/${id}`)
+  delete: (id: string) => api.delete(`/missions/${id}`),
+  orchestrate: (id: string) => api.post(`/missions/${id}/orchestrate`)
 }
 
 export const agentsService = {
@@ -47,7 +48,26 @@ export const tasksService = {
   getByMission: (missionId: string) => api.get(`/tasks?missionId=${missionId}`),
   create: (data: any) => api.post('/tasks', data),
   update: (id: string, data: any) => api.put(`/tasks/${id}`, data),
-  delete: (id: string) => api.delete(`/tasks/${id}`)
+  delete: (id: string) => api.delete(`/tasks/${id}`),
+  processSquadOutput: (id: string, output: any) => api.post(`/tasks/${id}/process-squad-output`, { output })
+}
+
+export const modelsService = {
+  getProviders: () => api.get('/models/providers'),
+  getProviderModels: (providerId: string) => api.get(`/models/providers/${providerId}/models`),
+  getModelInfo: (providerId: string, modelId: string) => api.get(`/models/${providerId}/${modelId}`)
+}
+
+export const providersService = {
+  getAll: () => api.get('/providers'),
+  getEnabled: () => api.get('/providers/enabled'),
+  create: (data: any) => api.post('/providers', data),
+  update: (providerId: string, data: any) => api.put(`/providers/${providerId}`, data),
+  delete: (providerId: string) => api.delete(`/providers/${providerId}`),
+  toggle: (providerId: string, enabled: boolean, apiKey?: string) =>
+    api.post(`/providers/${providerId}/toggle`, apiKey ? { enabled, apiKey } : { enabled }),
+  getModels: (providerId: string, refresh?: boolean) => api.get(`/providers/${providerId}/models${refresh ? '?refresh=true' : ''}`),
+  refreshAll: () => api.post('/providers/refresh-all')
 }
 
 export const activityService = {

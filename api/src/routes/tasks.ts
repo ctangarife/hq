@@ -2,6 +2,10 @@ import { Router } from 'express'
 import Task from '../models/Task.js'
 import Mission from '../models/Mission.js'
 import Agent from '../models/Agent.js'
+import {
+  processSquadLeadOutput,
+  checkMissionCompletion
+} from '../services/orchestration.service.js'
 
 const router = Router()
 
@@ -144,16 +148,27 @@ router.delete('/:id', async (req, res, next) => {
 })
 
 // GET /api/tasks/agent/:agentId/next - Get next task for agent (polling endpoint)
+// :agentId can be either MongoDB _id or containerId
 router.get('/agent/:agentId/next', async (req, res, next) => {
   try {
     const agentId = req.params.agentId
     const { missionId } = req.query
 
+    // Find the agent to get containerId
+    const agent = await Agent.findById(agentId)
+    let containerId = agentId // Default to using agentId as is
+
+    if (agent && agent.containerId) {
+      // Use containerId if available (for existing tasks)
+      containerId = agent.containerId
+    }
+
     // Find next pending task for this agent
     const filter: any = {
       status: 'pending',
       $or: [
-        { assignedTo: agentId }, // Assigned specifically to this agent
+        { assignedTo: containerId }, // Assigned to this agent's container
+        { assignedTo: agentId },     // Or assigned to agentId directly
         { assignedTo: { $exists: false } } // Or unassigned (any agent can take)
       ]
     }
@@ -194,8 +209,8 @@ router.get('/agent/:agentId/next', async (req, res, next) => {
     // Return first available task
     const task = availableTasks[0]
 
-    // Assign task to this agent
-    task.assignedTo = agentId
+    // Assign task to this agent's containerId (or agentId if no container yet)
+    task.assignedTo = agent.containerId || agentId
     await task.save()
 
     res.json(task)
@@ -253,6 +268,11 @@ router.post('/:id/complete', async (req, res, next) => {
 
     await task.save()
 
+    // Check if mission is completed after this task
+    if (task.missionId) {
+      await checkMissionCompletion(task.missionId)
+    }
+
     res.json({ message: completed ? 'Task completed' : 'Task failed', task })
   } catch (error) {
     next(error)
@@ -279,6 +299,47 @@ router.post('/:id/fail', async (req, res, next) => {
     }
 
     res.json({ message: 'Task marked as failed', task })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/process-squad-output - Process Squad Lead output and create agents/tasks
+router.post('/:id/process-squad-output', async (req, res, next) => {
+  try {
+    const { output } = req.body
+
+    if (!output) {
+      return res.status(400).json({ error: 'Output is required' })
+    }
+
+    const task = await Task.findById(req.params.id)
+
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    if (task.type !== 'mission_analysis') {
+      return res.status(400).json({ error: 'This endpoint is only for mission_analysis tasks' })
+    }
+
+    // Validate output structure
+    if (!output.tasks || !Array.isArray(output.tasks)) {
+      return res.status(400).json({ error: 'Output must contain a tasks array' })
+    }
+
+    if (!output.agents || !Array.isArray(output.agents)) {
+      return res.status(400).json({ error: 'Output must contain an agents array' })
+    }
+
+    // Process the Squad Lead output
+    const result = await processSquadLeadOutput(req.params.id, output)
+
+    res.json({
+      message: 'Squad Lead output processed successfully',
+      tasksCreated: result.tasksCreated,
+      agentsCreated: result.agentsCreated
+    })
   } catch (error) {
     next(error)
   }

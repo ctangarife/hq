@@ -8,7 +8,8 @@ const navItems = [
   { path: '/missions', name: 'Misiones', icon: '🎯' },
   { path: '/agents', name: 'Agentes', icon: '🤖' },
   { path: '/tasks', name: 'Tareas', icon: '✓' },
-  { path: '/activity', name: 'Actividad', icon: '📡' }
+  { path: '/activity', name: 'Actividad', icon: '📡' },
+  { path: '/providers', name: 'Providers', icon: '⚙️' }
 ]
 
 const isActive = (path: string) => {

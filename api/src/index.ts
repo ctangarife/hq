@@ -5,10 +5,12 @@ import { connectMongo } from './lib/mongodb.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { authMiddleware } from './middleware/auth.js'
 
-// Routes - Solo lo básico que funciona
+// Routes
 import missionRoutes from './routes/missions.js'
 import agentRoutes from './routes/agents.js'
 import taskRoutes from './routes/tasks.js'
+import modelsRoutes from './routes/models.js'
+import providersRoutes from './routes/providers.js'
 
 // Credentials management - Eliminado (no necesitamos)
 // import configRoutes from './routes/config.js'
@@ -41,6 +43,8 @@ app.use('/api', authMiddleware)
 app.use('/api/missions', missionRoutes)
 app.use('/api/agents', agentRoutes)
 app.use('/api/tasks', taskRoutes)
+app.use('/api/models', modelsRoutes)
+app.use('/api/providers', providersRoutes)
 
 // Error handler
 app.use(errorHandler)

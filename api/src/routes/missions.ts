@@ -1,6 +1,10 @@
 import { Router, Response, NextFunction } from 'express'
 import Mission from '../models/Mission.js'
 import Task from '../models/Task.js'
+import {
+  selectSquadLead,
+  createInitialMissionTask
+} from '../services/orchestration.service.js'
 
 const router = Router()
 
@@ -138,6 +142,81 @@ router.post('/:id/complete', async (req, res, next) => {
     }
 
     res.json({ message: 'Mission completed', mission })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/missions/:id/orchestrate - Start automatic orchestration with Squad Lead
+router.post('/:id/orchestrate', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    if (mission.status !== 'draft') {
+      return res.status(400).json({ error: 'Mission can only be orchestrated from draft status' })
+    }
+
+    if (mission.squadLeadId) {
+      return res.status(400).json({ error: 'Mission already has a Squad Lead assigned' })
+    }
+
+    // Step 1: Select or create Squad Lead
+    const squadLead = await selectSquadLead(mission._id.toString())
+
+    // Step 2: Update mission with Squad Lead
+    mission.squadLeadId = squadLead._id.toString()
+    mission.autoOrchestrate = true
+    mission.status = 'active'
+    mission.startedAt = new Date()
+    await mission.save()
+
+    // Add orchestration log entry
+    mission.orchestrationLog.push({
+      timestamp: new Date(),
+      action: 'orchestration_started',
+      details: {
+        squadLeadId: squadLead._id.toString(),
+        squadLeadName: squadLead.name
+      }
+    })
+    await mission.save()
+
+    // Step 3: Create initial mission analysis task
+    const initialTask = await createInitialMissionTask(
+      mission._id.toString(),
+      squadLead._id.toString()
+    )
+
+    // Add task to mission's taskIds
+    mission.taskIds.push(initialTask._id as any)
+    await mission.save()
+
+    res.status(200).json({
+      message: 'Mission orchestration started',
+      mission: {
+        _id: mission._id,
+        title: mission.title,
+        status: mission.status,
+        squadLeadId: mission.squadLeadId,
+        autoOrchestrate: mission.autoOrchestrate
+      },
+      squadLead: {
+        _id: squadLead._id,
+        name: squadLead.name,
+        role: squadLead.role,
+        status: squadLead.status
+      },
+      initialTask: {
+        _id: initialTask._id,
+        title: initialTask.title,
+        type: initialTask.type,
+        status: initialTask.status
+      }
+    })
   } catch (error) {
     next(error)
   }

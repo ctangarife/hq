@@ -41,6 +41,8 @@ export class DockerService {
 
     // Variables de entorno para HQ Agent (imagen personalizada)
     const env: Record<string, string> = {
+      // Identificación del agente
+      AGENT_ID: agentId,  // Importante: ID del agente para polling
       // Configuración del agente
       AGENT_NAME: agent.name,
       AGENT_ROLE: agent.role,
