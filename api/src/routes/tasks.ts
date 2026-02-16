@@ -15,7 +15,7 @@ async function enrichTasks(tasks: any[]) {
 
   // Obtener IDs únicos de misiones y agentes
   const missionIds = [...new Set(tasks.map(t => t.missionId).filter(Boolean))]
-  const agentContainerIds = [...new Set(tasks.map(t => t.assignedTo).filter(Boolean))]
+  const assignedAgentIds = [...new Set(tasks.map(t => t.assignedTo).filter(Boolean))]
 
   // Buscar misiones - filtrar solo IDs válidos (24 caracteres hex)
   const validMissionIds = missionIds.filter(id => /^[0-9a-f]{24}$/.test(id))
@@ -30,12 +30,28 @@ async function enrichTasks(tasks: any[]) {
     }
   }
 
-  // Buscar agentes por containerId
+  // Buscar agentes - puede ser por _id o por containerId
   let agentMap = new Map()
-  if (agentContainerIds.length > 0) {
+  if (assignedAgentIds.length > 0) {
     try {
-      const agents = await Agent.find({ containerId: { $in: agentContainerIds } }).lean()
-      agentMap = new Map(agents.map(a => [a.containerId, a.name || a.containerId]))
+      // Buscar agentes que coincidan ya sea por _id o por containerId
+      const agents = await Agent.find({
+        $or: [
+          { _id: { $in: assignedAgentIds } },
+          { containerId: { $in: assignedAgentIds } }
+        ]
+      }).lean()
+
+      // Crear mapa con ambas claves: _id y containerId
+      for (const agent of agents) {
+        const name = agent.name || agent.containerId || 'Unknown Agent'
+        if (agent._id) {
+          agentMap.set(agent._id.toString(), name)
+        }
+        if (agent.containerId) {
+          agentMap.set(agent.containerId, name)
+        }
+      }
     } catch (e) {
       console.error('Error fetching agents:', e.message)
     }
@@ -51,7 +67,7 @@ async function enrichTasks(tasks: any[]) {
       taskObj.missionTitle = mission?.title || task.missionId
     }
 
-    // Añadir nombre del agente
+    // Añadir nombre del agente (por _id o por containerId)
     if (task.assignedTo) {
       const agentName = agentMap.get(task.assignedTo)
       if (agentName) {
@@ -164,8 +180,10 @@ router.get('/agent/:agentId/next', async (req, res, next) => {
     }
 
     // Find next pending task for this agent
+    // Exclude human_input tasks - those are for humans, not agents
     const filter: any = {
       status: 'pending',
+      type: { $ne: 'human_input' }, // Exclude tasks for humans
       $or: [
         { assignedTo: containerId }, // Assigned to this agent's container
         { assignedTo: agentId },     // Or assigned to agentId directly
@@ -340,6 +358,155 @@ router.post('/:id/process-squad-output', async (req, res, next) => {
       tasksCreated: result.tasksCreated,
       agentsCreated: result.agentsCreated
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/status - Update task status
+router.post('/:id/status', async (req, res, next) => {
+  try {
+    const { status, output } = req.body
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' })
+    }
+
+    const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'awaiting_human_response']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` })
+    }
+
+    const task = await Task.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    task.status = status
+    if (output) {
+      task.output = output
+    }
+
+    // Set timestamps based on status
+    if (status === 'in_progress' && !task.startedAt) {
+      task.startedAt = new Date()
+    } else if (status === 'completed' || status === 'failed') {
+      task.completedAt = new Date()
+    }
+
+    await task.save()
+    res.json({ message: 'Task status updated', task })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/human-response - Complete a human_input task and resume parent task
+router.post('/:id/human-response', async (req, res, next) => {
+  try {
+    const { response } = req.body
+
+    if (!response) {
+      return res.status(400).json({ error: 'Response is required' })
+    }
+
+    const task = await Task.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    if (task.type !== 'human_input') {
+      return res.status(400).json({ error: 'This endpoint is only for human_input tasks' })
+    }
+
+    // Get parent task ID from input
+    const parentTaskId = task.input?.parentTaskId
+    if (!parentTaskId) {
+      return res.status(400).json({ error: 'Human task has no parent task ID' })
+    }
+
+    // Find and update the parent Squad Lead task
+    const parentTask = await Task.findById(parentTaskId)
+    if (!parentTask) {
+      return res.status(404).json({ error: 'Parent task not found' })
+    }
+
+    // Mark human task as completed
+    task.status = 'completed'
+    task.output = { humanResponse: response }
+    task.completedAt = new Date()
+    await task.save()
+
+    // Update mission to clear awaiting task
+    if (task.missionId) {
+      await Mission.findByIdAndUpdate(
+        task.missionId,
+        { $unset: { awaitingHumanTaskId: '' } }
+      )
+    }
+
+    // Create a new Squad Lead task with the human's answers
+    // This task will contain the human's response as context
+    const resumeTask = new Task({
+      missionId: parentTask.missionId,
+      title: `Resume Mission Analysis with Human Input`,
+      description: `Continue mission analysis with the following human input:\n\n${response}`,
+      type: 'mission_analysis',
+      assignedTo: parentTask.assignedTo,
+      status: 'pending',
+      dependencies: [],
+      priority: parentTask.priority,
+      input: {
+        originalTaskId: parentTaskId,
+        humanResponse: response,
+        originalMission: {
+          title: parentTask.title,
+          description: parentTask.description
+        }
+      }
+    })
+    await resumeTask.save()
+
+    // Mark old parent task as completed (replaced by resume task)
+    parentTask.status = 'completed'
+    parentTask.output = {
+      success: true,
+      result: {
+        awaitingHumanInput: true,
+        resumedBy: resumeTask._id
+      }
+    }
+    parentTask.completedAt = new Date()
+    await parentTask.save()
+
+    res.json({
+      message: 'Human response recorded. Squad Lead will continue with your input.',
+      humanTask: task,
+      resumeTask
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/tasks/human/list - List all pending human_input tasks
+router.get('/human/list', async (req, res, next) => {
+  try {
+    const { missionId } = req.query
+
+    const filter: any = {
+      type: 'human_input',
+      status: 'pending'
+    }
+
+    if (missionId) {
+      filter.missionId = missionId
+    }
+
+    const tasks = await Task.find(filter).sort({ createdAt: -1 })
+    const enrichedTasks = await enrichTasks(tasks)
+
+    res.json(enrichedTasks)
   } catch (error) {
     next(error)
   }

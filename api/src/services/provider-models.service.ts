@@ -107,25 +107,18 @@ async function fetchAnthropicModels(): Promise<ModelInfo[]> {
  * Fetch models from MiniMax (no models endpoint, use known list)
  * MiniMax does NOT have a /v1/models endpoint
  * Docs: https://platform.minimax.io/docs/guides/models-intro
+ *
+ * NOTE: The OpenAI-compatible API uses different model names than the native API
+ * - OpenAI-compatible: MiniMax-M2.5, MiniMax-M2.1 (api.minimax.io/v1/chat/completions)
+ * - Native API: abab6.5s-chat, abab6.5g-chat (api.minimax.chat/v1/text/chatcompletion_v2)
  */
 async function fetchMiniMaxModels(): Promise<ModelInfo[]> {
+  // Model names for OpenAI-compatible API endpoint
+  // Based on official MiniMax platform documentation 2025
   return [
-    // M2 Series - Latest (2026)
-    { id: 'mini-max-m2.5', name: 'MiniMax M2.5', description: 'Latest flagship, optimized for coding (Feb 2026)', contextLength: 128000 },
-    { id: 'mini-max-m2.1', name: 'MiniMax M2.1', description: 'Multi-language coding, app/web dev', contextLength: 128000 },
-    { id: 'mini-max-m2-her', name: 'MiniMax M2-her', description: '10B activated parameters', contextLength: 128000 },
-
-    // M1 Series
-    { id: 'mini-max-m1-80k', name: 'MiniMax M1 80K', description: '456B MoE, 80K thinking, 1M context', contextLength: 1000000 },
-    { id: 'mini-max-m1-40k', name: 'MiniMax M1 40K', description: 'Smaller context variant', contextLength: 128000 },
-
-    // Hailuo Series
-    { id: 'mini-max-hailuo-2.3', name: 'MiniMax Hailuo 2.3', description: 'Hailuo model', contextLength: 32000 },
-
-    // Legacy / Chat models
-    { id: 'abab6.5s-chat', name: 'abab6.5s-chat', description: 'Legacy chat model', contextLength: 32000 },
-    { id: 'abab6-chat', name: 'abab6-chat', description: 'Legacy chat model', contextLength: 32000 },
-    { id: 'abab5.5-chat', name: 'abab5.5-chat', description: 'Legacy chat model', contextLength: 32000 }
+    { id: 'MiniMax-M2.5', name: 'MiniMax M2.5', description: 'Latest flagship model optimized for coding', contextLength: 204800 },
+    { id: 'MiniMax-M2.1', name: 'MiniMax M2.1', description: 'Multi-language programming model', contextLength: 204800 },
+    { id: 'MiniMax-Text-01', name: 'MiniMax Text 01', description: 'Text generation model', contextLength: 200000 }
   ]
 }
 

@@ -263,8 +263,10 @@ export async function processSquadLeadOutput(
     }
   }
 
-  // Create tasks
-  let tasksCreated = 0
+  // Create tasks - First pass: create all tasks and build ID map
+  const taskIdMap = new Map<string, string>() // tempId -> realId
+  const createdTasks: Task[] = []
+
   for (const taskDef of output.tasks) {
     try {
       // Map agent role to actual agent ID
@@ -289,21 +291,28 @@ export async function processSquadLeadOutput(
         type: taskDef.type,
         assignedTo,
         status: 'pending',
-        dependencies: taskDef.dependencies,
+        dependencies: [], // Will be filled in second pass
         priority: taskDef.priority,
         input: taskDef.input
       })
 
       await newTask.save()
 
+      // Store mapping of temp ID to real ID
+      if (taskDef.id) {
+        taskIdMap.set(taskDef.id, newTask._id.toString())
+      }
+
+      createdTasks.push(newTask)
+
       // Add to mission's taskIds
       mission.taskIds.push(newTask._id as any)
-      tasksCreated++
 
       await addOrchestrationLog(mission._id.toString(), {
         action: 'task_created',
         details: {
           taskId: newTask._id.toString(),
+          tempId: taskDef.id,
           title: newTask.title,
           type: newTask.type
         }
@@ -317,9 +326,33 @@ export async function processSquadLeadOutput(
     }
   }
 
+  // Second pass: Process dependencies using the ID map
+  const dependenciesMap = new Map<string, string[]>()
+  if (output.dependencies && Array.isArray(output.dependencies)) {
+    for (const dep of output.dependencies) {
+      const realTaskId = taskIdMap.get(dep.taskId)
+      if (realTaskId) {
+        const realDepIds = (dep.dependsOn || [])
+          .map((tempId: string) => taskIdMap.get(tempId))
+          .filter((id: string | undefined): id is string => id !== undefined)
+
+        dependenciesMap.set(realTaskId, realDepIds)
+      }
+    }
+  }
+
+  // Update tasks with their dependencies
+  for (const task of createdTasks) {
+    const deps = dependenciesMap.get(task._id.toString())
+    if (deps && deps.length > 0) {
+      task.dependencies = deps
+      await task.save()
+    }
+  }
+
   await mission.save()
 
-  return { tasksCreated, agentsCreated }
+  return { tasksCreated: createdTasks.length, agentsCreated }
 }
 
 /**

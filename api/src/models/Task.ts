@@ -9,6 +9,7 @@ export type TaskType =
   | 'mission_analysis'   // Squad Lead analyzes mission
   | 'agent_creation'     // Create specialized agent
   | 'coordination'       // Squad Lead coordinates agents
+  | 'human_input'        // Requires human response
 
 export interface ITask extends Document {
   missionId: string
@@ -16,7 +17,7 @@ export interface ITask extends Document {
   description: string
   type: TaskType
   assignedTo?: string
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'awaiting_human_response'
   dependencies: string[]
   priority: 'high' | 'medium' | 'low'
   input?: Record<string, any>
@@ -26,6 +27,10 @@ export interface ITask extends Document {
   completedAt?: Date
   createdAt: Date
   updatedAt: Date
+  // For human_input tasks - user response when ready
+  userId?: string  // ID of the user assigned (not an agent)
+  // For awaiting_human_response - link to human task
+  humanTaskId?: string
 }
 
 const taskSchema = new Schema<ITask>({
@@ -42,14 +47,15 @@ const taskSchema = new Schema<ITask>({
       'custom',
       'mission_analysis',
       'agent_creation',
-      'coordination'
+      'coordination',
+      'human_input'
     ],
     default: 'custom'
   },
   assignedTo: { type: String },
   status: {
     type: String,
-    enum: ['pending', 'in_progress', 'completed', 'failed'],
+    enum: ['pending', 'in_progress', 'completed', 'failed', 'awaiting_human_response'],
     default: 'pending'
   },
   priority: {
@@ -62,7 +68,9 @@ const taskSchema = new Schema<ITask>({
   output: { type: Schema.Types.Mixed },
   error: { type: String },
   startedAt: { type: Date },
-  completedAt: { type: Date }
+  completedAt: { type: Date },
+  userId: { type: String },  // For human_input tasks
+  humanTaskId: { type: String }  // For awaiting_human_response
 }, {
   timestamps: true
 })

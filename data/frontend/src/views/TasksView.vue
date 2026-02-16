@@ -6,6 +6,7 @@ interface Task {
   _id: string
   title: string
   description?: string
+  type?: string
   status: 'pending' | 'in_progress' | 'completed' | 'failed'
   assignedTo?: string
   missionId?: string
@@ -37,8 +38,18 @@ const formData = ref({
   title: '',
   description: '',
   missionId: '',
-  assignedTo: ''
+  assignedTo: '',
+  type: 'custom' as string
 })
+
+const taskTypes = [
+  { value: 'custom', label: 'Custom' },
+  { value: 'web_search', label: 'Búsqueda Web' },
+  { value: 'data_analysis', label: 'Análisis de Datos' },
+  { value: 'content_generation', label: 'Generación de Contenido' },
+  { value: 'code_execution', label: 'Ejecución de Código' },
+  { value: 'mission_analysis', label: 'Análisis de Misión (Squad Lead)' }
+]
 
 const agents = ref<Array<{ _id: string; name: string }>>([])
 const missions = ref<Array<{ _id: string; title: string }>>([])
@@ -105,9 +116,10 @@ const createTask = async () => {
       description: formData.value.description,
       missionId: formData.value.missionId || undefined,
       assignedTo: formData.value.assignedTo || undefined,
+      type: formData.value.type,
       status: 'pending'
     })
-    formData.value = { title: '', description: '', missionId: '', assignedTo: '' }
+    formData.value = { title: '', description: '', missionId: '', assignedTo: '', type: 'custom' }
     showCreateModal.value = false
     await fetchTasks()
   } catch (err) {
@@ -151,7 +163,9 @@ const openEditModal = (task: Task) => {
     // Guardar el missionId original como string (puede venir como objeto del populate)
     originalMissionId: (task as any).missionId?._id || (task as any).missionId,
     // Normalizar assignedTo: extraer el _id si viene como objeto del populate
-    assignedTo: (task as any).assignedTo?._id || (task as any).assignedTo
+    assignedTo: (task as any).assignedTo?._id || (task as any).assignedTo,
+    // Asegurar que type tenga un valor por defecto
+    type: task.type || 'custom'
   }
   showEditModal.value = true
 }
@@ -168,6 +182,7 @@ const updateTask = async () => {
     await tasksService.update(editingTask.value._id, {
       title: editingTask.value.title,
       description: editingTask.value.description,
+      type: editingTask.value.type,
       // Si ya tenía misión, usar la original (inmutable), sino la que se seleccione
       missionId: hasOriginalMission
         ? (editingTask.value as any).originalMissionId
@@ -391,6 +406,17 @@ onMounted(async () => {
             </select>
           </div>
           <div>
+            <label class="block text-gray-400 text-sm mb-1">Tipo</label>
+            <select
+              v-model="formData.type"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+            >
+              <option v-for="type in taskTypes" :key="type.value" :value="type.value">
+                {{ type.label }}
+              </option>
+            </select>
+          </div>
+          <div>
             <label class="block text-gray-400 text-sm mb-1">Asignar a</label>
             <select
               v-model="formData.assignedTo"
@@ -460,6 +486,17 @@ onMounted(async () => {
               <option value="">Sin misión asignada</option>
               <option v-for="mission in missions" :key="mission._id" :value="mission._id">
                 {{ mission.title }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Tipo</label>
+            <select
+              v-model="editingTask.type"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+            >
+              <option v-for="type in taskTypes" :key="type.value" :value="type.value">
+                {{ type.label }}
               </option>
             </select>
           </div>

@@ -50,6 +50,9 @@ export class DockerService {
       // Configuración LLM para HQ Agent
       LLM_MODEL: agent.llmModel,
       LLM_PROVIDER: agent.provider,
+      // MongoDB URI para que el agente pueda cargar API keys
+      MONGO_URI: `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@mongodb:27017/${process.env.MONGODB_DATABASE}?authSource=admin`,
+      HQ_API_URL: process.env.HQ_API_URL || 'http://api:3001/api'
     }
 
     // Agregar API key si el agente tiene una específica

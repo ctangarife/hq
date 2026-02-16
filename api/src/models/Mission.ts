@@ -19,6 +19,8 @@ export interface IMission extends Document {
     action: string
     details: Record<string, any>
   }>
+  // Human input flow - ID of task waiting for human response
+  awaitingHumanTaskId?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -49,7 +51,9 @@ const missionSchema = new Schema<IMission>({
     timestamp: { type: Date, default: Date.now },
     action: { type: String, required: true },
     details: { type: Schema.Types.Mixed, default: {} }
-  }]
+  }],
+  // Human input flow - ID of task waiting for human response
+  awaitingHumanTaskId: { type: String }
 }, {
   timestamps: true
 })

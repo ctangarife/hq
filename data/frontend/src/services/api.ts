@@ -46,10 +46,13 @@ export const tasksService = {
   getAll: () => api.get('/tasks'),
   getById: (id: string) => api.get(`/tasks/${id}`),
   getByMission: (missionId: string) => api.get(`/tasks?missionId=${missionId}`),
+  getHumanTasks: (missionId?: string) => api.get(`/tasks/human/list${missionId ? `?missionId=${missionId}` : ''}`),
   create: (data: any) => api.post('/tasks', data),
   update: (id: string, data: any) => api.put(`/tasks/${id}`, data),
+  updateStatus: (id: string, status: string, output?: any) => api.post(`/tasks/${id}/status`, { status, output }),
   delete: (id: string) => api.delete(`/tasks/${id}`),
-  processSquadOutput: (id: string, output: any) => api.post(`/tasks/${id}/process-squad-output`, { output })
+  processSquadOutput: (id: string, output: any) => api.post(`/tasks/${id}/process-squad-output`, { output }),
+  submitHumanResponse: (id: string, response: string) => api.post(`/tasks/${id}/human-response`, { response })
 }
 
 export const modelsService = {

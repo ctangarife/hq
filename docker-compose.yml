@@ -140,6 +140,18 @@ services:
       - hq-network
 
   # ---------------------------------------------------------------------------
+  # HQ AGENT (OpenClaw-based) - Imagen base para agentes
+  # ---------------------------------------------------------------------------
+  hq-agent-openclaw:
+    build:
+      context: ./docker/hq-agent-openclaw
+      dockerfile: Dockerfile
+    image: hq-agent-openclaw:latest
+    restart: "no"
+    profiles:
+      - build-only
+
+  # ---------------------------------------------------------------------------
   # AGENT BROWSER - Puppeteer automation (desde OpenClaw)
   # ---------------------------------------------------------------------------
   agent-browser:

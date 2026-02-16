@@ -238,64 +238,35 @@ export const PROVIDER_MODELS: Record<string, ProviderModels> = {
 
   // =============================================================================
   // MINIMAX
+  // NOTE: OpenAI-compatible API uses different model names than native API
+  // Native API: abab6.5s-chat (api.minimax.chat/v1/text/chatcompletion_v2)
+  // OpenAI API: MiniMax-M2.5, MiniMax-M2.1 (api.minimax.io/v1/chat/completions)
   // =============================================================================
   minimax: {
     providerId: 'minimax',
     providerName: 'MiniMax',
     models: [
       {
-        id: 'mini-max-m2.5',
+        id: 'MiniMax-M2.5',
         name: 'MiniMax M2.5',
-        description: 'Latest flagship, optimized for coding (Feb 2026)',
-        contextLength: 128000,
-        capabilities: ['chat', 'code', 'reasoning'],
-        costLevel: 'high'
+        description: 'Latest flagship model optimized for coding and tool use',
+        contextLength: 204800,
+        capabilities: ['chat', 'code', 'reasoning', 'function-calling'],
+        costLevel: 'low'
       },
       {
-        id: 'mini-max-m2.1',
+        id: 'MiniMax-M2.1',
         name: 'MiniMax M2.1',
-        description: 'Multi-language coding, app/web dev',
-        contextLength: 128000,
+        description: 'Multi-language programming model',
+        contextLength: 204800,
         capabilities: ['chat', 'code'],
-        costLevel: 'medium'
-      },
-      {
-        id: 'mini-max-m2-her',
-        name: 'MiniMax M2-her',
-        description: '10B activated parameters',
-        contextLength: 128000,
-        capabilities: ['chat'],
         costLevel: 'low'
       },
       {
-        id: 'mini-max-m1-80k',
-        name: 'MiniMax M1 80K',
-        description: '456B MoE, 80K thinking, 1M context',
-        contextLength: 1000000,
-        capabilities: ['chat', 'reasoning'],
-        costLevel: 'high'
-      },
-      {
-        id: 'mini-max-m1-40k',
-        name: 'MiniMax M1 40K',
-        description: 'Smaller context variant',
-        contextLength: 128000,
-        capabilities: ['chat'],
-        costLevel: 'medium'
-      },
-      {
-        id: 'mini-max-hailuo-2.3',
-        name: 'MiniMax Hailuo 2.3',
-        description: 'Hailuo model',
-        contextLength: 32000,
-        capabilities: ['chat'],
-        costLevel: 'low'
-      },
-      {
-        id: 'abab6.5s-chat',
-        name: 'abab6.5s-chat',
-        description: 'Legacy chat model',
-        contextLength: 32000,
+        id: 'MiniMax-Text-01',
+        name: 'MiniMax Text 01',
+        description: 'Text generation model',
+        contextLength: 200000,
         capabilities: ['chat'],
         costLevel: 'low'
       }
@@ -366,7 +337,7 @@ export function getModelInfo(providerId: string, modelId: string): ModelInfo | n
 export function getDefaultModel(providerId: string): string {
   const defaults: Record<string, string> = {
     zai: 'glm-4',
-    minimax: 'abab6.5s-chat',
+    minimax: 'MiniMax-M2.1',
     anthropic: 'claude-3-5-sonnet-20241022',
     openai: 'gpt-4o-mini',
     google: 'gemini-1.5-flash',

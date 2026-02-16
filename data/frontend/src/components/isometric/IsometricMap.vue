@@ -44,34 +44,34 @@ let app: Application | null = null
 let mapContainer: Container | null = null
 const robotSprites = new Map<string, RobotSprite>()
 
-// Zonas del mapa HQ
+// Zonas del mapa HQ - actualizadas para los tres estados de trabajo
 const zones: Zone[] = [
   {
-    id: 'mission-control',
-    name: 'Mission Control',
+    id: 'work-control',
+    name: '🎯 Work Control',
     x: 0,
     y: -100,
-    width: 200,
-    height: 120,
-    color: 0x1E40AF
+    width: 220,
+    height: 100,
+    color: 0x7C3AED  // Purple - agents waiting for task
   },
   {
     id: 'work-area',
-    name: 'Work Area',
+    name: '⚡ Work Area',
     x: -150,
     y: 50,
     width: 180,
     height: 100,
-    color: 0x065F46
+    color: 0x059669  // Green - agents working
   },
   {
     id: 'lounge',
-    name: 'Lounge',
+    name: '☕ Lounge',
     x: 150,
     y: 50,
     width: 160,
     height: 100,
-    color: 0x7C2D12
+    color: 0xB45309  // Orange/Amber - idle agents
   }
 ]
 
@@ -113,14 +113,14 @@ function drawZones() {
     const hw = zone.width / 2
     const hh = zone.height / 2
 
-    // Fondo
+    // Fondo con gradiente de alpha
     g.beginPath()
     g.moveTo(0, -hh)
     g.lineTo(hw, 0)
     g.lineTo(0, hh)
     g.lineTo(-hw, 0)
     g.closePath()
-    g.fill({ color: zone.color, alpha: 0.3 })
+    g.fill({ color: zone.color, alpha: 0.25 })
 
     // Borde
     g.beginPath()
@@ -129,30 +129,56 @@ function drawZones() {
     g.lineTo(0, hh)
     g.lineTo(-hw, 0)
     g.closePath()
-    g.stroke({ width: 2, color: zone.color, alpha: 0.8 })
+    g.stroke({ width: 2, color: zone.color, alpha: 0.9 })
 
     // Grosor 3D
-    const thickness = 8
+    const thickness = 10
     g.beginPath()
     g.moveTo(-hw, 0)
     g.lineTo(-hw, thickness)
     g.lineTo(0, hh + thickness)
     g.lineTo(0, hh)
     g.closePath()
-    g.fill({ color: zone.color, alpha: 0.5 })
+    g.fill({ color: zone.color, alpha: 0.6 })
 
-    // Etiqueta
+    // Grosor lateral derecho
+    g.beginPath()
+    g.moveTo(0, hh)
+    g.lineTo(0, hh + thickness)
+    g.lineTo(hw, thickness)
+    g.lineTo(hw, 0)
+    g.closePath()
+    g.fill({ color: zone.color, alpha: 0.4 })
+
+    // Etiqueta con emoji
     const label = new Text({
       text: zone.name,
       style: {
-        fontSize: 14,
+        fontSize: 16,
+        fontWeight: 'bold',
         fill: 0xFFFFFF,
         align: 'center'
       }
     })
     label.x = -label.width / 2
-    label.y = -10
+    label.y = -hh - 25
     g.addChild(label)
+
+    // Contador de agentes en esta zona
+    const agentCount = getAgentsInZone(zone.id).length
+    if (agentCount > 0) {
+      const countLabel = new Text({
+        text: `${agentCount} agent${agentCount > 1 ? 's' : ''}`,
+        style: {
+          fontSize: 12,
+          fill: 0xCCCCCC,
+          align: 'center'
+        }
+      })
+      countLabel.x = -countLabel.width / 2
+      countLabel.y = 15
+      g.addChild(countLabel)
+    }
 
     // Click
     g.eventMode = 'static'
@@ -164,8 +190,54 @@ function drawZones() {
   })
 }
 
+function getAgentsInZone(zoneId: string): Agent[] {
+  return props.agents.filter(agent => getAgentZone(agent) === zoneId)
+}
+
+function getAgentZone(agent: Agent): string {
+  // Determinar en qué zona debería estar el agente
+  if (!agent.containerId || agent.status === 'offline' || agent.status === 'inactive') {
+    return 'lounge'
+  }
+
+  // Ver tareas asignadas a este agente
+  const hasPendingTask = props.tasks && props.tasks.some(
+    t => t.assignedTo === agent.containerId && t.status === 'pending'
+  )
+
+  const hasInProgressTask = props.tasks && props.tasks.some(
+    t => t.assignedTo === agent.containerId && t.status === 'in_progress'
+  )
+
+  if (hasPendingTask) {
+    return 'work-control'  // Tiene tarea asignada, esperando
+  } else if (hasInProgressTask) {
+    return 'work-area'  // Está trabajando
+  } else {
+    return 'lounge'  // Sin tareas
+  }
+}
+
+function getAgentPosition(agent: Agent): { x: number; y: number } {
+  const zoneId = getAgentZone(agent)
+  const zone = zones.find(z => z.id === zoneId)!
+
+  // Posición aleatoria pero consistente dentro de la zona
+  const hash = agent._id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+
+  // Ajustar el rango según el tamaño de la zona
+  const rangeX = zone.width * 0.35  // 35% del ancho para márgenes
+  const rangeY = zone.height * 0.35  // 35% del alto para márgenes
+
+  const offsetX = (hash % 100 - 50) / 100 * rangeX
+  const offsetY = ((hash >> 8) % 100 - 50) / 100 * rangeY
+
+  return { x: zone.x + offsetX, y: zone.y + offsetY }
+}
+
 function getAgentColor(agent: Agent): number {
   const roleColors: Record<string, number> = {
+    squad_lead: 0x8B5CF6,  // Purple for Squad Leads
     coder: AGENT_COLORS.coder,
     developer: AGENT_COLORS.coder,
     researcher: AGENT_COLORS.researcher,
@@ -176,32 +248,14 @@ function getAgentColor(agent: Agent): number {
   return roleColors[agent.role?.toLowerCase() || ''] || AGENT_COLORS.default
 }
 
-function getAgentPosition(agent: Agent): { x: number; y: number } {
-  const lounge = zones.find(z => z.id === 'lounge')!
-  const workArea = zones.find(z => z.id === 'work-area')!
-
-  const hasActiveTasks = props.tasks && props.tasks.some(
-    t => t.assignedTo === agent.containerId && (t.status === 'pending' || t.status === 'in_progress')
-  )
-
-  if (agent.status === 'offline' || agent.status === 'inactive' || !agent.containerId || !hasActiveTasks) {
-    const hash = agent._id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
-    const offsetX = (hash % 60) - 30
-    const offsetY = ((hash >> 8) % 30) - 15
-    return { x: lounge.x + offsetX, y: lounge.y + offsetY }
-  }
-
-  const hash = agent._id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
-  const offsetX = (hash % 80) - 40
-  const offsetY = ((hash >> 8) % 40) - 20
-  return { x: workArea.x + offsetX, y: workArea.y + offsetY }
-}
-
 function getRobotState(agent: Agent): 'idle' | 'walking' | 'working' | 'error' | 'happy' {
   if (agent.status === 'failed' || agent.status === 'error') return 'error'
-  if (agent.status === 'offline') return 'idle'
-  if (agent.status === 'active') return 'working'
-  return 'idle'
+  if (agent.status === 'offline' || agent.status === 'inactive') return 'idle'
+
+  const zone = getAgentZone(agent)
+  if (zone === 'work-area') return 'working'  // Está trabajando
+  if (zone === 'work-control') return 'happy'  // Feliz de tener tarea
+  return 'idle'  // En lounge, esperando
 }
 
 function updateAgentSprites() {
@@ -216,8 +270,12 @@ function updateAgentSprites() {
     }
   }
 
+  // Actualizar zonas para mostrar contadores
+  drawZones()
+
   props.agents.forEach(agent => {
     let sprite = robotSprites.get(agent._id)
+    const newPos = getAgentPosition(agent)
 
     if (!sprite) {
       const color = getAgentColor(agent)
@@ -225,15 +283,17 @@ function updateAgentSprites() {
       sprite.eventMode = 'static'
       sprite.on('pointerdown', () => emit('agentClick', agent))
 
-      const pos = getAgentPosition(agent)
-      sprite.x = pos.x
-      sprite.y = pos.y
+      sprite.x = newPos.x
+      sprite.y = newPos.y
 
       if (mapContainer) {
         mapContainer.addChild(sprite)
       }
       robotSprites.set(agent._id, sprite)
     } else {
+      // Animar hacia nueva posición
+      sprite.x = newPos.x
+      sprite.y = newPos.y
       sprite.state = getRobotState(agent)
     }
   })
@@ -253,7 +313,7 @@ function handleResize() {
   }
 }
 
-watch(() => props.agents, () => {
+watch(() => [props.agents, props.tasks], () => {
   updateAgentSprites()
 }, { deep: true })
 
