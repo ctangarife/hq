@@ -4,7 +4,7 @@ import axios from 'axios'
 // Docs: https://docs.z.ai/api-reference/introduction
 
 const ZAI_API_KEY = process.env.ZAI_API_KEY || ''
-const ZAI_API_ENDPOINT = process.env.ZAI_API_ENDPOINT || 'https://open.bigmodel.cn/api/paas/v4/'
+const ZAI_API_ENDPOINT = process.env.ZAI_API_ENDPOINT || 'https://api.z.ai/api/anthropic/'
 
 interface ZaiMessage {
   role: 'system' | 'user' | 'assistant'

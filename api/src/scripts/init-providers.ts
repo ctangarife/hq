@@ -13,7 +13,7 @@ const DEFAULT_PROVIDERS = [
     name: 'Z.ai (Zhipu AI)',
     type: 'openai',
     enabled: true,
-    apiEndpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    apiEndpoint: 'https://api.z.ai/api/anthropic',
     defaultModel: 'glm-4'
   },
   {

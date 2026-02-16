@@ -518,7 +518,7 @@ El proyecto soporta múltiples proveedores de LLM con gestión dinámica desde M
 
 | Provider ID | Nombre | Tipo | Endpoint |
 |-------------|--------|------|----------|
-| `zai` | Z.ai (Zhipu AI) | openai | https://open.bigmodel.cn/api/paas/v4 |
+| `zai` | Z.ai (Zhipu AI) | openai | https://api.z.ai/api/anthropic |
 | `minimax` | MiniMax | openai | https://api.minimax.io/v1 |
 | `anthropic` | Anthropic (Claude) | anthropic | https://api.anthropic.com |
 | `openai` | OpenAI | openai | https://api.openai.com/v1 |

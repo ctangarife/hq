@@ -106,7 +106,7 @@ if [ "$(id -u)" = "0" ]; then
 
   // Z.ai provider (OpenAI-compatible) - sin campo 'api'
   config.models.providers.zai = {
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    baseUrl: 'https://api.z.ai/api/anthropic/chat/completions',
     models: [
       { id: 'glm-4', name: 'GLM-4', contextWindow: 128000 },
       { id: 'glm-4-plus', name: 'GLM-4 Plus', contextWindow: 128000 },

@@ -26,7 +26,7 @@ const config = {
 // LLM Providers configuration
 const providers = {
   zai: {
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    baseUrl: 'https://api.z.ai/api/anthropic/chat/completions',
     getHeaders: (apiKey) => ({
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
