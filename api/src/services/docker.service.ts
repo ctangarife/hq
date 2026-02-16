@@ -6,6 +6,12 @@ const docker = new Docker({
   socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock'
 })
 
+export interface LogLine {
+  timestamp: string
+  level: 'info' | 'warn' | 'error' | 'debug'
+  message: string
+}
+
 export interface ContainerConfig {
   name: string
   image: string
@@ -195,7 +201,7 @@ export class DockerService {
   }
 
   /**
-   * Obtener logs de un contenedor
+   * Obtener logs de un contenedor (raw string)
    */
   async getContainerLogs(containerId: string, tail: number = 100): Promise<string> {
     try {
@@ -211,6 +217,135 @@ export class DockerService {
       console.error('Error getting logs:', error)
       return ''
     }
+  }
+
+  /**
+   * Obtener logs de un contenedor (parseados como array de líneas)
+   */
+  async getContainerLogsParsed(containerId: string, options: { tail?: number; since?: number } = {}): Promise<LogLine[]> {
+    const { tail = 100, since } = options
+    try {
+      const container = docker.getContainer(containerId)
+      const logs = await container.logs({
+        stdout: true,
+        stderr: true,
+        tail: tail,
+        since: since,
+        timestamps: true
+      })
+
+      const logString = logs.toString('utf-8')
+      return this.parseDockerLogs(logString)
+    } catch (error: any) {
+      console.error('Error getting logs:', error)
+      if (error.statusCode === 404) {
+        return [{ timestamp: new Date().toISOString(), level: 'error', message: 'Container not found' }]
+      }
+      return []
+    }
+  }
+
+  /**
+   * Stream de logs de un contenedor en tiempo real
+   */
+  streamContainerLogs(containerId: string, callback: (log: LogLine) => void): NodeJS.ReadableStream {
+    try {
+      const container = docker.getContainer(containerId)
+      const stream = container.logs({
+        stdout: true,
+        stderr: true,
+        follow: true,
+        timestamps: true,
+        tail: 1
+      })
+
+      stream.on('data', (chunk: Buffer) => {
+        const logString = chunk.toString('utf-8')
+        const logs = this.parseDockerLogs(logString)
+        logs.forEach(log => callback(log))
+      })
+
+      stream.on('error', (error) => {
+        console.error('Error streaming logs:', error)
+        callback({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: `Stream error: ${error.message}`
+        })
+      })
+
+      return stream
+    } catch (error: any) {
+      console.error('Error setting up log stream:', error)
+      if (error.statusCode === 404) {
+        callback({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: 'Container not found'
+        })
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Parsear logs de Docker a un formato estructurado
+   */
+  private parseDockerLogs(logString: string): LogLine[] {
+    const lines = logString.split('\n').filter(line => line.trim())
+    const parsed: LogLine[] = []
+
+    for (const line of lines) {
+      // Docker logs format: timestamp + stream prefix + message
+      // Stream prefix: \x01 for stdout, \x02 for stderr
+      let cleanLine = line
+
+      // Remove stream prefix
+      if (line.startsWith('\x01')) {
+        cleanLine = line.substring(1)
+      } else if (line.startsWith('\x02')) {
+        cleanLine = line.substring(1)
+      }
+
+      // Extract timestamp (ISO format at start)
+      const timestampMatch = cleanLine.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(.+)/)
+      if (timestampMatch) {
+        const [, timestamp, message] = timestampMatch
+        parsed.push({
+          timestamp,
+          level: this.detectLogLevel(message),
+          message: message.trim()
+        })
+      } else {
+        // No timestamp found, use current time
+        parsed.push({
+          timestamp: new Date().toISOString(),
+          level: this.detectLogLevel(cleanLine),
+          message: cleanLine.trim()
+        })
+      }
+    }
+
+    return parsed
+  }
+
+  /**
+   * Detectar nivel de log basado en el contenido
+   */
+  private detectLogLevel(message: string): 'info' | 'warn' | 'error' | 'debug' {
+    const lower = message.toLowerCase()
+
+    if (lower.includes('error') || lower.includes('fail') || lower.includes('❌')) {
+      return 'error'
+    }
+    if (lower.includes('warn') || lower.includes('⚠️')) {
+      return 'warn'
+    }
+    if (lower.includes('debug') || lower.includes('🐛')) {
+      return 'debug'
+    }
+
+    return 'info'
   }
 
   /**

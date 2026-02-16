@@ -38,7 +38,8 @@ export const agentsService = {
   start: (id: string) => api.post(`/agents/${id}/start`),
   stop: (id: string) => api.post(`/agents/${id}/stop`),
   getStatus: (id: string) => api.get(`/agents/${id}/status`),
-  getLogs: (id: string, tail?: number) => api.get(`/agents/${id}/logs${tail ? `?tail=${tail}` : ''}`),
+  getLogs: (id: string, tail?: number) => api.get(`/agents/${id}/logs`, { params: { tail } }),
+  streamLogs: (id: string) => new EventSource(`${API_URL}/agents/${id}/logs/stream`),
   destroyContainer: (id: string) => api.delete(`/agents/${id}/container`)
 }
 

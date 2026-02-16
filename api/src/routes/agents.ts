@@ -232,7 +232,7 @@ router.post('/:id/start', async (req, res, next) => {
   }
 })
 
-// GET /api/agents/:id/logs - Get agent container logs
+// GET /api/agents/:id/logs - Get agent container logs (parsed)
 router.get('/:id/logs', async (req, res, next) => {
   try {
     const agent = await Agent.findById(req.params.id)
@@ -241,13 +241,62 @@ router.get('/:id/logs', async (req, res, next) => {
     }
 
     if (!agent.containerId) {
-      return res.status(400).json({ error: 'No container found' })
+      return res.status(400).json({ error: 'No container found for this agent' })
     }
 
     const tail = parseInt(req.query.tail as string) || 100
-    const logs = await dockerService.getContainerLogs(agent.containerId, tail)
+    const logs = await dockerService.getContainerLogsParsed(agent.containerId, { tail })
 
-    res.json({ logs, containerId: agent.containerId })
+    res.json({
+      agentId: agent._id,
+      agentName: agent.name,
+      containerId: agent.containerId,
+      logs,
+      count: logs.length
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/agents/:id/logs/stream - Stream agent container logs (SSE)
+router.get('/:id/logs/stream', async (req, res, next) => {
+  try {
+    const agent = await Agent.findById(req.params.id)
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+
+    if (!agent.containerId) {
+      return res.status(400).json({ error: 'No container found for this agent' })
+    }
+
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ type: 'connected', agentId: agent._id, agentName: agent.name })}\n\n`)
+
+    // Setup log stream
+    const stream = dockerService.streamContainerLogs(
+      agent.containerId,
+      (log) => {
+        try {
+          res.write(`data: ${JSON.stringify({ type: 'log', data: log })}\n\n`)
+        } catch (err) {
+          // Client disconnected
+          stream.destroy()
+        }
+      }
+    )
+
+    // Handle client disconnect
+    req.on('close', () => {
+      stream.destroy()
+    })
   } catch (error) {
     next(error)
   }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { agentsService, providersService } from "@/services/api";
+import AgentLogsViewer from "@/components/AgentLogsViewer.vue";
 
 interface Agent {
   _id: string;
@@ -35,6 +36,8 @@ const agents = ref<Agent[]>([]);
 const loading = ref(true);
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
+const showLogsModal = ref(false);
+const selectedAgentForLogs = ref<Agent | null>(null);
 const editingAgent = ref<Agent | null>(null);
 const submitting = ref(false);
 
@@ -143,6 +146,16 @@ function openEditModal(agent: Agent) {
     fetchProviderModels(agent.provider);
   }
   showEditModal.value = true;
+}
+
+function openLogsModal(agent: Agent) {
+  selectedAgentForLogs.value = agent;
+  showLogsModal.value = true;
+}
+
+function closeLogsModal() {
+  showLogsModal.value = false;
+  selectedAgentForLogs.value = null;
 }
 
 async function createAgent() {
@@ -291,6 +304,13 @@ onMounted(() => {
             class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm"
           >
             Editar Agente
+          </button>
+          <button
+            v-if="agent.containerId"
+            @click="openLogsModal(agent)"
+            class="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm flex items-center justify-center gap-2"
+          >
+            📋 View Logs
           </button>
           <button
             v-if="!agent.containerId"
@@ -505,6 +525,19 @@ onMounted(() => {
           </div>
         </form>
       </div>
+    </div>
+
+    <!-- Logs Viewer Modal -->
+    <div
+      v-if="showLogsModal && selectedAgentForLogs"
+      class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+    >
+      <AgentLogsViewer
+        :agent-id="selectedAgentForLogs._id"
+        :agent-name="selectedAgentForLogs.name"
+        :container-id="selectedAgentForLogs.containerId"
+        @close="closeLogsModal"
+      />
     </div>
   </div>
 </template>

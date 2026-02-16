@@ -37,11 +37,23 @@ if [ "$(id -u)" = "0" ]; then
   chmod -R 755 "$AGENT_DIR" 2>/dev/null || true
 
   # Crear directorios opcionales de OpenClaw para evitar warnings
+  # Nota: Estos directorios necesitan permisos especiales porque OpenClaw intenta escribir en ellos
   mkdir -p "/home/node/.openclaw/canvas" 2>/dev/null || true
   mkdir -p "/home/node/.openclaw/cron" 2>/dev/null || true
   mkdir -p "/home/node/.openclaw/workspace" 2>/dev/null || true
+
+  # IMPORTANTE: Dar permisos completos al usuario node sobre estos directorios
+  # OpenClaw necesita escribir en ellos durante su ejecución
   chown -R node:node "/home/node/.openclaw/canvas" "/home/node/.openclaw/cron" "/home/node/.openclaw/workspace" 2>/dev/null || true
-  chmod -R 755 "/home/node/.openclaw/canvas" "/home/node/.openclaw/cron" "/home/node/.openclaw/workspace" 2>/dev/null || true
+  chmod -R 775 "/home/node/.openclaw/canvas" "/home/node/.openclaw/cron" "/home/node/.openclaw/workspace" 2>/dev/null || true
+
+  # Verificar permisos de workspace
+  if [ -d "/home/node/.openclaw/workspace" ]; then
+    # Asegurar que el usuario node pueda escribir
+    su node -c "mkdir -p /home/node/.openclaw/workspace/test" 2>/dev/null && rm -rf "/home/node/.openclaw/workspace/test" || {
+      echo "⚠️  Warning: node user cannot write to workspace directory"
+    }
+  fi
 
   # Sincronizar API keys desde MongoDB a auth-profiles.json
   if [ -f /app/sync-auth-profiles.cjs ]; then
