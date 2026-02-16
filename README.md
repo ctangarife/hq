@@ -2,6 +2,9 @@
 
 Sistema de gestión de squads de agentes de IA para coordinación y ejecución de tareas complejas, basado en **OpenClaw**.
 
+<img width="1866" height="510" alt="image" src="https://github.com/user-attachments/assets/10538e10-c6c2-4c08-906e-95703aab6a21" />
+
+
 ## Características
 
 - **Gestión de Misiones** - Define objetivos y squads de IA
@@ -108,6 +111,9 @@ Cuando el Squad Lead necesita más información del usuario:
 | writer | writer | content_generation, editing, documentation | glm-4 |
 | analyst | analyst | data_analysis, statistics, reporting | glm-4 |
 
+<img width="1856" height="887" alt="image" src="https://github.com/user-attachments/assets/3fcffe1b-82d5-4bd1-8e13-edba28a6004e" />
+
+
 ### API de Orquestación
 
 ```bash
@@ -194,6 +200,9 @@ Accede a http://localhost y navega a **Providers** para configurar tus LLM provi
 2. Actívalo e ingresa tu API key
 3. Los modelos se cargarán automáticamente desde el API del provider
 
+<img width="1867" height="678" alt="image" src="https://github.com/user-attachments/assets/d5eac41e-7357-49f1-8a6c-0093f930aec5" />
+
+
 ### 4. Crear Agentes
 
 1. Navega a **Agents**
@@ -248,6 +257,9 @@ El Squad Lead es un agente especial que analiza misiones y coordina equipos de a
 3. **Guarda la misión**
    - Haz clic en "Create"
    - La misión se creará con estado "draft"
+
+<img width="1867" height="510" alt="image" src="https://github.com/user-attachments/assets/c51aecaa-0110-4f66-9900-59e25d8984c4" />
+
 
 ### Paso 3: Orquestar la Misión
 
@@ -304,6 +316,9 @@ Una vez completado el análisis, el Squad Lead habrá creado:
    - Estado actual
    - Botones para acciones (Start, Complete, Fail)
 
+<img width="1859" height="756" alt="image" src="https://github.com/user-attachments/assets/e9c87894-2e42-49cf-be5d-177ea8a64d14" />
+
+
 ### Paso 6: Monitorear la Actividad
 
 1. **Vista de Actividad Isométrica**
@@ -319,6 +334,9 @@ Una vez completado el análisis, el Squad Lead habrá creado:
      - Tareas completadas
      - Agentes moviéndose entre zonas
      - Nuevos agentes creados
+
+<img width="1509" height="854" alt="image" src="https://github.com/user-attachments/assets/96dedcad-b6a5-422f-ad39-e01c7a0390f3" />
+
 
 ### Paso 7: Ver Resultados
 
