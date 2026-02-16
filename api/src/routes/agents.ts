@@ -98,15 +98,87 @@ router.post('/', async (req, res, next) => {
 // PUT /api/agents/:id - Update agent
 router.put('/:id', async (req, res, next) => {
   try {
-    const agent = await Agent.findByIdAndUpdate(
+    // Get current agent BEFORE updating to detect changes
+    const currentAgent = await Agent.findById(req.params.id)
+    if (!currentAgent) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+
+    // Detect if provider or model changed
+    const providerChanged = req.body.provider && req.body.provider !== currentAgent.provider
+    const modelChanged = req.body.llmModel && req.body.llmModel !== currentAgent.llmModel
+    const needsContainerRecreation = providerChanged || modelChanged
+
+    // Validate provider/model combination if provided
+    if (req.body.provider && req.body.llmModel) {
+      const modelInfo = getModelInfo(req.body.provider, req.body.llmModel)
+      if (!modelInfo) {
+        return res.status(400).json({
+          error: `Invalid model "${req.body.llmModel}" for provider "${req.body.provider}"`,
+          hint: `Use GET /api/models/providers/${req.body.provider}/models to list available models`
+        })
+      }
+    }
+
+    // Update agent in MongoDB
+    const updatedAgent = await Agent.findByIdAndUpdate(
       req.params.id,
       { $set: req.body },
       { new: true, runValidators: true }
     )
-    if (!agent) {
-      return res.status(404).json({ error: 'Agent not found' })
+
+    // Auto-recreate container if provider/model changed and agent has a container
+    let containerRecreated = false
+    let newContainerId = updatedAgent.containerId
+
+    if (needsContainerRecreation && currentAgent.containerId) {
+      console.log(`Provider or model changed for agent ${updatedAgent.name}. Recreating container...`)
+
+      try {
+        // Stop and remove old container
+        const existingStatus = await dockerService.getContainerStatus(currentAgent.containerId)
+        if (existingStatus === 'running') {
+          await dockerService.stopContainer(currentAgent.containerId)
+        }
+        await dockerService.removeContainer(currentAgent.containerId)
+        console.log(`Old container ${currentAgent.containerId} removed`)
+
+        // Create new container with updated config
+        newContainerId = await dockerService.createAgentContainer(
+          updatedAgent._id.toString(),
+          {
+            name: updatedAgent.name,
+            role: updatedAgent.role,
+            personality: updatedAgent.personality,
+            llmModel: updatedAgent.llmModel,
+            provider: updatedAgent.provider,
+            apiKey: updatedAgent.apiKey
+          }
+        )
+
+        // Update agent with new container ID
+        updatedAgent.containerId = newContainerId
+        updatedAgent.status = 'active'
+        await updatedAgent.save()
+
+        containerRecreated = true
+        console.log(`New container ${newContainerId} created for agent ${updatedAgent.name}`)
+      } catch (dockerError) {
+        console.error('Failed to recreate container:', dockerError)
+        // Keep agent updated but mark as offline
+        updatedAgent.containerId = undefined
+        updatedAgent.status = 'offline'
+        await updatedAgent.save()
+      }
     }
-    res.json(agent)
+
+    const response: any = updatedAgent.toObject()
+    if (containerRecreated) {
+      response.containerRecreated = true
+      response.message = 'Agent updated and container recreated with new model/provider'
+    }
+
+    res.json(response)
   } catch (error) {
     next(error)
   }

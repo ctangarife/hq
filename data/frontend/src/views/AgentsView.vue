@@ -185,10 +185,13 @@ async function updateAgent() {
   try {
     submitting.value = true;
     const agentId = editingAgent.value._id;
-    if (editingAgent.value.containerId) {
-      await agentsService.destroyContainer(agentId);
-    }
-    await agentsService.update(agentId, {
+
+    // Check if model/provider is changing
+    const modelChanged = formData.value.llmModel !== editingAgent.value.llmModel;
+    const providerChanged = formData.value.provider !== editingAgent.value.provider;
+    const needsRecreation = modelChanged || providerChanged;
+
+    const response = await agentsService.update(agentId, {
       name: formData.value.name,
       role: formData.value.role,
       personality: formData.value.personality,
@@ -196,6 +199,12 @@ async function updateAgent() {
       provider: formData.value.provider,
       apiKey: formData.value.apiKey || undefined,
     });
+
+    // Show message if container was auto-recreated
+    if (response.data.containerRecreated) {
+      alert(response.data.message || 'Agent updated and container recreated');
+    }
+
     showEditModal.value = false;
     editingAgent.value = null;
     resetForm();
@@ -436,8 +445,9 @@ onMounted(() => {
     >
       <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-700">
         <h2 class="text-xl font-bold text-white mb-4">Edit Agent</h2>
-        <p class="text-yellow-400 text-sm mb-4">
-          Container will be destroyed and redeployed on save
+        <p class="text-gray-400 text-sm mb-4">
+          Container will be auto-recreated when model/provider changes.
+          <span class="text-gray-500">Use "Destroy" button for manual control.</span>
         </p>
         <form @submit.prevent="updateAgent()" class="space-y-4">
           <div>
