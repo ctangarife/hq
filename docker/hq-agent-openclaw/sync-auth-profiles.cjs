@@ -52,7 +52,7 @@ async function syncAuthProfiles() {
         let type = 'openai'; // Default
         if (provider.providerId === 'anthropic') type = 'anthropic';
         else if (provider.providerId === 'minimax') type = 'openai'; // MiniMax usa API OpenAI-compatible
-        else if (provider.providerId === 'zai') type = 'openai'; // Z.ai usa API OpenAI-compatible
+        else if (provider.providerId === 'zai') type = 'anthropic'; // Z.ai usa API anthropic-compatible
 
         authProfiles[profileId] = {
           type,

@@ -19,7 +19,7 @@ export interface ModelInfo {
  * Fetch models from Z.ai (BigModel/ZhipuAI)
  * Uses their OpenAI-compatible API
  */
-async function fetchZaiModels(apiKey: string, baseUrl: string = 'https://open.bigmodel.cn/api/paas/v4'): Promise<ModelInfo[]> {
+async function fetchZaiModels(apiKey: string, baseUrl: string = 'https://api.z.ai/api/paas/v4/'): Promise<ModelInfo[]> {
   try {
     const response = await axios.get(`${baseUrl}/models`, {
       headers: {
