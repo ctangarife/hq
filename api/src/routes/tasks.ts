@@ -6,6 +6,7 @@ import {
   processSquadLeadOutput,
   checkMissionCompletion
 } from '../services/orchestration.service.js'
+import { taskEventsService } from '../services/task-events.service.js'
 
 const router = Router()
 
@@ -99,6 +100,21 @@ router.get('/', async (req, res, next) => {
   }
 })
 
+// GET /api/tasks/stream - SSE stream for real-time task updates
+// IMPORTANTE: Esta ruta debe ir ANTES de /:id para evitar conflictos
+router.get('/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+
+  taskEventsService.registerClient(res)
+
+  req.on('close', () => {
+    taskEventsService.unregisterClient(res)
+  })
+})
+
 // GET /api/tasks/:id - Get task by ID
 router.get('/:id', async (req, res, next) => {
   try {
@@ -120,6 +136,7 @@ router.post('/', async (req, res, next) => {
   try {
     const task = new Task(req.body)
     await task.save()
+    taskEventsService.emitTaskCreated(task)
     res.status(201).json(task)
   } catch (error) {
     next(error)
@@ -137,6 +154,8 @@ router.put('/:id', async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
+
+    taskEventsService.emitTaskUpdated(task)
 
     // If task is completed, set completedAt
     if (req.body.status === 'completed' && !task.completedAt) {
@@ -157,6 +176,7 @@ router.delete('/:id', async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
+    taskEventsService.emitTaskDeleted(req.params.id)
     res.status(204).send()
   } catch (error) {
     next(error)

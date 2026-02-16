@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { tasksService, missionsService, agentsService } from '@/services/api'
 
 interface Task {
@@ -28,6 +28,9 @@ const showEditModal = ref(false)
 const submitting = ref(false)
 const updating = ref<string | null>(null)
 const editingTask = ref<Task | null>(null)
+
+// SSE connection
+let taskEventSource: EventSource | null = null
 
 // Drag and drop state
 const draggedTaskId = ref<string | null>(null)
@@ -241,9 +244,91 @@ const onDrop = async (newStatus: string, event: DragEvent) => {
   draggedOverColumn.value = null
 }
 
+// Connect to SSE stream for real-time task updates
+const connectToTaskStream = () => {
+  if (taskEventSource) {
+    taskEventSource.close()
+  }
+
+  taskEventSource = tasksService.streamTasks()
+
+  taskEventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+
+      switch (data.type) {
+        case 'connected':
+          console.log('Connected to task updates stream')
+          break
+
+        case 'task.created':
+        case 'task.updated':
+          // Actualizar o agregar tarea en la lista
+          handleTaskUpdate(data.data)
+          break
+
+        case 'task.deleted':
+          // Remover tarea de la lista
+          tasks.value = tasks.value.filter(t => t._id !== data.data.taskId)
+          break
+
+        case 'task.status_changed':
+          // Recargar todas las tareas para obtener datos completos
+          fetchTasks()
+          break
+
+        case 'task.completed':
+        case 'task.failed':
+          // Recargar para ver el estado final
+          fetchTasks()
+          break
+
+        case 'heartbeat':
+          // Mantener conexión viva
+          break
+      }
+    } catch (error) {
+      console.error('Error parsing SSE message:', error)
+    }
+  }
+
+  taskEventSource.onerror = (error) => {
+    console.error('SSE error:', error)
+    // Reconnectar después de 5 segundos
+    setTimeout(() => {
+      if (taskEventSource) {
+        connectToTaskStream()
+      }
+    }, 5000)
+  }
+}
+
+// Handle individual task update (optimización para no recargar todo)
+const handleTaskUpdate = (updatedTask: Task) => {
+  const index = tasks.value.findIndex(t => t._id === updatedTask._id)
+
+  if (index !== -1) {
+    // Actualizar tarea existente
+    tasks.value[index] = updatedTask
+  } else {
+    // Agregar nueva tarea
+    tasks.value.unshift(updatedTask)
+  }
+}
+
 onMounted(async () => {
   await fetchTasks()
   await fetchOptions()
+
+  // Conectar al stream SSE
+  connectToTaskStream()
+})
+
+onUnmounted(() => {
+  if (taskEventSource) {
+    taskEventSource.close()
+    taskEventSource = null
+  }
 })
 </script>
 

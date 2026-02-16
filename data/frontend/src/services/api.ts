@@ -53,7 +53,8 @@ export const tasksService = {
   updateStatus: (id: string, status: string, output?: any) => api.post(`/tasks/${id}/status`, { status, output }),
   delete: (id: string) => api.delete(`/tasks/${id}`),
   processSquadOutput: (id: string, output: any) => api.post(`/tasks/${id}/process-squad-output`, { output }),
-  submitHumanResponse: (id: string, response: string) => api.post(`/tasks/${id}/human-response`, { response })
+  submitHumanResponse: (id: string, response: string) => api.post(`/tasks/${id}/human-response`, { response }),
+  streamTasks: () => new EventSource(`${API_URL}/tasks/stream`)
 }
 
 export const modelsService = {
