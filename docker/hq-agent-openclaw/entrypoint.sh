@@ -7,7 +7,7 @@ set -e
 echo "🦞 HQ Agent (OpenClaw) - Iniciando..."
 
 # Variables de entorno por defecto
-MONGO_URI="${MONGO_URI:-mongodb://root:1nt3r4ct1v3@mongodb:27017/hq?authSource=admin}"
+MONGO_URI="${MONGO_URI:-mongodb://root:password@mongodb:27017/hq?authSource=admin}"
 HQ_API_URL="${HQ_API_URL:-http://api:3001/api}"
 HQ_API_TOKEN="${HQ_API_TOKEN:-hq-agent-token}"
 AGENT_ID="${AGENT_ID:-}"

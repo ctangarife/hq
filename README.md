@@ -168,11 +168,11 @@ Edita `.env` y configura al menos:
 
 ```bash
 # UI Secret para autenticación
-UI_SECRET=E9gqo72IikeWG4maTFuZrgbi
+UI_SECRET=<genera_un_secreto_unico_32_caracteres>
 
 # MongoDB
 MONGODB_ROOT_USERNAME=root
-MONGODB_ROOT_PASSWORD=1nt3r4ct1v3
+MONGODB_ROOT_PASSWORD=<tu_password_seguro>
 MONGODB_DATABASE=hq
 
 # Z.ai - Proveedor LLM principal (configurable vía UI)
@@ -201,6 +201,178 @@ Accede a http://localhost y navega a **Providers** para configurar tus LLM provi
 3. Selecciona el **Provider** y **Modelo** de la lista desplegable
 4. Configura nombre, rol y personalidad
 5. El agente se despliega automáticamente en un contenedor OpenClaw
+
+## Guía Paso a Paso: Squad Lead y Orquestación de Misiones
+
+Esta guía te muestra cómo crear un agente Squad Lead, definir una misión y dejar que el sistema orqueste automáticamente los agentes y tareas necesarios.
+
+### Paso 1: Crear un Agente Squad Lead
+
+El Squad Lead es un agente especial que analiza misiones y coordina equipos de agentes especializados.
+
+1. **Navega a la página Agents**
+   - Haz clic en "Agents" en el menú lateral
+
+2. **Crea un nuevo agente**
+   - Haz clic en el botón "New Agent"
+   - Configura los siguientes campos:
+
+   | Campo | Valor recomendado |
+   |-------|-------------------|
+   | **Name** | Cabezón (o el nombre que prefieras) |
+   | **Role** | Squad Lead |
+   | **Provider** | zai (o minimax, anthropic, etc.) |
+   | **Model** | glm-4-plus (o el mejor modelo disponible) |
+   | **Personality** | "Eres un líder de equipo experimentado que analiza misiones, identifica tareas necesarias y coordina agentes especializados." |
+
+3. **Guarda el agente**
+   - Haz clic en "Create"
+   - El contenedor del agente se creará automáticamente
+   - Espera a que el estado cambie a "Active"
+
+### Paso 2: Crear una Misión
+
+1. **Navega a la página Misions**
+   - Haz clic en "Missions" en el menú lateral
+
+2. **Crea una nueva misión**
+   - Haz clic en el botón "New Mission"
+   - Completa los campos:
+
+   | Campo | Descripción | Ejemplo |
+   |-------|-------------|---------|
+   | **Title** | Título corto de la misión | "Asistente de traducción técnica" |
+   | **Description** | Descripción detallada del objetivo | "Crear un asistente de IA especializado en traducción técnica de documentación de software, con soporte para español, inglés y portugués. El asistente debe mantener terminología consistente y detectar errores comunes." |
+   | **Squad Lead** | Selecciona tu Squad Lead | Cabezón |
+
+3. **Guarda la misión**
+   - Haz clic en "Create"
+   - La misión se creará con estado "draft"
+
+### Paso 3: Orquestar la Misión
+
+La orquestación es el proceso donde el Squad Lead analiza la misión y crea automáticamente los agentes y tareas necesarios.
+
+1. **Inicia la orquestación**
+   - En la tarjeta de la misión, haz clic en el botón "Orchestrate"
+   - El sistema creará una tarea inicial de tipo "mission_analysis" para el Squad Lead
+
+2. **Espera el análisis del Squad Lead**
+   - El Squad Lead analizará la misión y responderá de dos formas:
+     - **Con preguntas**: Si la descripción es muy genérica, creará una tarea `human_input` para pedirte más información
+     - **Con un plan JSON**: Si la descripción es clara, creará agentes y tareas automáticamente
+
+### Paso 4: Responder Input Humano (si aplica)
+
+Si el Squad Lead necesita más información:
+
+1. **Verás un indicador en la misión**
+   - "❓ Esperando tu respuesta"
+
+2. **Haz clic en "Responder"**
+   - Se abrirá un modal con las preguntas del Squad Lead
+
+3. **Escribe tu respuesta**
+   - Responde a las preguntas con la mayor claridad posible
+   - Haz clic en "Enviar Respuesta"
+
+4. **El Squad Lead continuará el análisis**
+   - Con tu información, creará el plan de agentes y tareas
+
+### Paso 5: Ver Tareas Creadas
+
+Una vez completado el análisis, el Squad Lead habrá creado:
+
+1. **Agentes especializados**
+   - Researcher: Para investigación y recopilación de información
+   - Developer: Para implementación técnica
+   - Writer: Para generación de contenido
+   - Analyst: Para análisis y validación
+
+2. **Tareas organizadas**
+   - Navega a la página "Tasks" para ver el tablero Kanban
+   - Las tareas estarán distribuidas por estado:
+     - **Pending**: Tareas pendientes de asignación
+     - **In Progress**: Tareas que los agentes están ejecutando
+     - **Completed**: Tareas finalizadas
+     - **Failed**: Tareas que fallaron
+
+3. **Cada tarjeta de tarea muestra**
+   - Título y descripción
+   - Tipo de tarea (web_search, code_execution, content_generation, etc.)
+   - Agente asignado
+   - Estado actual
+   - Botones para acciones (Start, Complete, Fail)
+
+### Paso 6: Monitorear la Actividad
+
+1. **Vista de Actividad Isométrica**
+   - Navega a "Activity" en el menú
+   - Verás un mapa visual con tres zonas:
+     - 🎯 **Work Control**: Agentes con tareas pendientes
+     - ⚡ **Work Area**: Agentes ejecutando tareas
+     - ☕ **Lounge**: Agentes inactivos/disponibles
+
+2. **Stream de Eventos en Tiempo Real**
+   - La vista Activity muestra eventos en tiempo real:
+     - Agentes asignados a tareas
+     - Tareas completadas
+     - Agentes moviéndose entre zonas
+     - Nuevos agentes creados
+
+### Paso 7: Ver Resultados
+
+1. **Cuando la misión se completa**
+   - El estado de la misión cambiará a "completed"
+   - El Squad Lead volverá al estado "idle" (disponible)
+   - Los agentes especializados creados quedarán disponibles para futuras misiones
+
+2. **Revisar el log de orquestación**
+   - En la página de la misión, expande "Orchestration Log"
+   - Verás el historial completo:
+     - Cuándo se creó cada agente
+     - Qué tareas se generaron
+     - El progreso de cada tarea
+
+### Ejemplo Completo: Misión de "Traducción Técnica"
+
+```
+1. Creo "Cabezón" como Squad Lead (con modelo glm-4-plus)
+2. Creo misión "Asistente de traducción técnica"
+3. Hago clic en "Orchestrate"
+4. Cabezón analiza y crea:
+   - Agente "Researcher" → tarea "investigar_glosarios_tecnicos"
+   - Agente "Writer" → tarea "crear_guia_estilo"
+   - Agente "Developer" → tarea "implementar_validador"
+5. Los agentes ejecutan sus tareas (polling automático)
+6. Las tareas se completan y aparecen en "Completed"
+7. La misión cambia a estado "completed"
+```
+
+### Crear Tareas Manualmente
+
+También puedes crear tareas manualmente sin usar el Squad Lead:
+
+1. **Navega a Tasks**
+2. **Haz clic en "New Task"**
+3. **Completa los campos**:
+   - **Title**: Título de la tarea
+   - **Description**: Instrucciones detalladas
+   - **Type**: Tipo de tarea (custom, web_search, code_execution, etc.)
+   - **Mission**: Misión a la que pertenece (opcional)
+   - **Assigned To**: Agente específico (o dejar vacío para que cualquier agente la tome)
+
+4. **La tarea aparecerá en la columna "Pending"**
+5. **Un agente la tomará automáticamente** (via polling)
+
+### Asignar Tarea a un Agente Específico
+
+1. **Edita la tarea**
+   - Haz clic en el botón de editar en la tarjeta de tarea
+2. **Selecciona el agente**
+   - En "Assigned To", selecciona el agente de la lista
+3. **Guarda los cambios**
+4. **El agente asignado ejecutará la tarea** en su próximo ciclo de polling
 
 ### 5. Acceder a la aplicación
 
@@ -264,7 +436,7 @@ docker compose exec api sh
 
 ```bash
 # Entrar a MongoDB shell
-docker exec hq-mongodb mongosh -u root -p 1nt3r4ct1v3 --authenticationDatabase admin
+docker exec hq-mongodb mongosh -u root -p <tu_password_seguro> --authenticationDatabase admin
 
 # Ver providers configurados
 use hq

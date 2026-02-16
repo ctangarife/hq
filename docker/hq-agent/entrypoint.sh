@@ -7,7 +7,7 @@ set -e
 echo "🦞 HQ Agent - Iniciando..."
 
 # Variables de entorno por defecto
-MONGO_URI="${MONGO_URI:-mongodb://root:1nt3r4ct1v3@mongodb:27017/hq?authSource=admin}"
+MONGO_URI="${MONGO_URI:-mongodb://root:password@mongodb:27017/hq?authSource=admin}"
 # If MONGO_URI is not set, try building from individual components
 if [ -z "$MONGO_URI" ] && [ -n "$MONGODB_USERNAME" ] && [ -n "$MONGODB_PASSWORD" ]; then
   MONGO_URI="mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/${MONGODB_DATABASE:-hq}?authSource=admin"
