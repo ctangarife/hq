@@ -7,6 +7,7 @@ import {
   checkMissionCompletion
 } from '../services/orchestration.service.js'
 import { taskEventsService } from '../services/task-events.service.js'
+import { activityLog } from '../services/activity-logger.service.js'
 
 const router = Router()
 
@@ -136,6 +137,10 @@ router.post('/', async (req, res, next) => {
   try {
     const task = new Task(req.body)
     await task.save()
+
+    // Log activity
+    await activityLog.taskCreated(task.title, task.missionId, task._id.toString())
+
     taskEventsService.emitTaskCreated(task)
     res.status(201).json(task)
   } catch (error) {
@@ -157,10 +162,17 @@ router.put('/:id', async (req, res, next) => {
 
     taskEventsService.emitTaskUpdated(task)
 
-    // If task is completed, set completedAt
+    // If task is completed, set completedAt and log
     if (req.body.status === 'completed' && !task.completedAt) {
       task.completedAt = new Date()
       await task.save()
+
+      // Calculate duration
+      const duration = task.startedAt
+        ? task.completedAt.getTime() - new Date(task.startedAt).getTime()
+        : undefined
+
+      await activityLog.taskCompleted(task.title, duration, task._id.toString())
     }
 
     res.json(task)
@@ -176,6 +188,10 @@ router.delete('/:id', async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
+
+    // Log activity
+    await activityLog.taskDeleted(task.title, task._id.toString())
+
     taskEventsService.emitTaskDeleted(req.params.id)
     res.status(204).send()
   } catch (error) {
@@ -335,6 +351,9 @@ router.post('/:id/fail', async (req, res, next) => {
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
+
+    // Log activity
+    await activityLog.taskFailed(task.title, errorMessage, task._id.toString())
 
     res.json({ message: 'Task marked as failed', task })
   } catch (error) {

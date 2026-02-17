@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from "vue";
 import { agentsService, providersService } from "@/services/api";
 import AgentLogsViewer from "@/components/AgentLogsViewer.vue";
+import AgentMetricsDashboard from "@/components/AgentMetricsDashboard.vue";
 
 interface Agent {
   _id: string;
@@ -37,6 +38,7 @@ const loading = ref(true);
 const showCreateModal = ref(false);
 const showEditModal = ref(false);
 const showLogsModal = ref(false);
+const showMetricsModal = ref(false);
 const selectedAgentForLogs = ref<Agent | null>(null);
 const editingAgent = ref<Agent | null>(null);
 const submitting = ref(false);
@@ -186,11 +188,6 @@ async function updateAgent() {
     submitting.value = true;
     const agentId = editingAgent.value._id;
 
-    // Check if model/provider is changing
-    const modelChanged = formData.value.llmModel !== editingAgent.value.llmModel;
-    const providerChanged = formData.value.provider !== editingAgent.value.provider;
-    const needsRecreation = modelChanged || providerChanged;
-
     const response = await agentsService.update(agentId, {
       name: formData.value.name,
       role: formData.value.role,
@@ -259,14 +256,23 @@ onMounted(() => {
   <div class="p-6">
     <header class="flex justify-between items-center mb-8">
       <h1 class="text-3xl font-bold text-white">Agents</h1>
-      <button
-        @click="openCreateModal()"
-        :disabled="providers.length === 0"
-        class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed"
-        :title="providers.length === 0 ? 'Enable a provider first' : ''"
-      >
-        + New Agent
-      </button>
+      <div class="flex gap-2">
+        <button
+          @click="showMetricsModal = true"
+          class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition"
+          title="Ver métricas de agentes"
+        >
+          📊 Métricas
+        </button>
+        <button
+          @click="openCreateModal()"
+          :disabled="providers.length === 0"
+          class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed"
+          :title="providers.length === 0 ? 'Enable a provider first' : ''"
+        >
+          + New Agent
+        </button>
+      </div>
     </header>
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Loading...</div>
@@ -548,6 +554,25 @@ onMounted(() => {
         :container-id="selectedAgentForLogs.containerId"
         @close="closeLogsModal"
       />
+    </div>
+
+    <!-- Metrics Dashboard Modal -->
+    <div
+      v-if="showMetricsModal"
+      class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto"
+    >
+      <div class="w-full max-w-6xl">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-2xl font-bold text-white">Dashboard de Métricas</h2>
+          <button
+            @click="showMetricsModal = false"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+        <AgentMetricsDashboard />
+      </div>
     </div>
   </div>
 </template>

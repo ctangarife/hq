@@ -14,7 +14,7 @@ AGENT_ID="${AGENT_ID:-}"
 AGENT_NAME="${AGENT_NAME:-HQ Agent}"
 AGENT_ROLE="${AGENT_ROLE:-Assistant}"
 LLM_PROVIDER="${LLM_PROVIDER:-zai}"
-LLM_MODEL="${LLM_MODEL:-glm-4}"
+LLM_MODEL="${LLM_MODEL:-glm-4.7}"
 
 CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-/home/node/.openclaw}"
 CONFIG_FILE="${CONFIG_DIR}/openclaw.json"
@@ -120,6 +120,8 @@ if [ "$(id -u)" = "0" ]; then
   config.models.providers.zai = {
     baseUrl: 'https://api.z.ai/api/anthropic/chat/completions',
     models: [
+      { id: 'glm-4.7', name: 'GLM-4.7', contextWindow: 128000 },
+      { id: 'glm-4.7-flash', name: 'GLM-4.7 Flash', contextWindow: 128000 },
       { id: 'glm-4', name: 'GLM-4', contextWindow: 128000 },
       { id: 'glm-4-plus', name: 'GLM-4 Plus', contextWindow: 128000 },
       { id: 'glm-4-flash', name: 'GLM-4 Flash', contextWindow: 128000 }

@@ -211,7 +211,7 @@ export async function processSquadLeadOutput(
         role: agentDef.role,
         personality: template?.personality || 'You are a helpful AI assistant.',
         capabilities: agentDef.capabilities,
-        llmModel: agentDef.llmModel || template?.defaultLlmModel || 'glm-4',
+        llmModel: agentDef.llmModel || template?.defaultLlmModel || 'glm-4.7',
         provider: template?.defaultProvider || 'zai',
         isReusable: true,
         currentMissionId: mission._id.toString(),

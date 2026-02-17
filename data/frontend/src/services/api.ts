@@ -25,7 +25,14 @@ export const missionsService = {
   create: (data: any) => api.post('/missions', data),
   update: (id: string, data: any) => api.put(`/missions/${id}`, data),
   delete: (id: string) => api.delete(`/missions/${id}`),
-  orchestrate: (id: string) => api.post(`/missions/${id}/orchestrate`)
+  orchestrate: (id: string) => api.post(`/missions/${id}/orchestrate`),
+  start: (id: string) => api.post(`/missions/${id}/start`),
+  pause: (id: string, reason?: string) => api.post(`/missions/${id}/pause`, { reason }),
+  resume: (id: string) => api.post(`/missions/${id}/resume`),
+  cancel: (id: string, reason?: string) => api.post(`/missions/${id}/cancel`, { reason }),
+  complete: (id: string) => api.post(`/missions/${id}/complete`),
+  getProgress: (id: string) => api.get(`/missions/${id}/progress`),
+  getTimeline: (id: string) => api.get(`/missions/${id}/timeline`)
 }
 
 export const agentsService = {
@@ -40,7 +47,11 @@ export const agentsService = {
   getStatus: (id: string) => api.get(`/agents/${id}/status`),
   getLogs: (id: string, tail?: number) => api.get(`/agents/${id}/logs`, { params: { tail } }),
   streamLogs: (id: string) => new EventSource(`${API_URL}/agents/${id}/logs/stream`),
-  destroyContainer: (id: string) => api.delete(`/agents/${id}/container`)
+  destroyContainer: (id: string) => api.delete(`/agents/${id}/container`),
+  getMetrics: (id: string) => api.get(`/agents/${id}/metrics`),
+  getAllMetrics: () => api.get('/agents/metrics'),
+  getSystemMetrics: (startDate?: string, endDate?: string) =>
+    api.get('/agents/metrics/system', { params: { startDate, endDate } })
 }
 
 export const tasksService = {
@@ -76,7 +87,7 @@ export const providersService = {
 }
 
 export const activityService = {
-  getAll: () => api.get('/activity'),
+  getAll: () => api.get('/activity'),  // Note: api base URL already includes /api prefix
   subscribe: () => new EventSource(`${API_URL}/activity/stream`)
 }
 

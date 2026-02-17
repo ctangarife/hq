@@ -5,6 +5,7 @@ import {
   selectSquadLead,
   createInitialMissionTask
 } from '../services/orchestration.service.js'
+import { activityLog } from '../services/activity-logger.service.js'
 
 const router = Router()
 
@@ -59,6 +60,10 @@ router.post('/', async (req, res, next) => {
     })
 
     const saved = await mission.save()
+
+    // Log activity
+    await activityLog.missionCreated(saved.title, saved._id.toString())
+
     res.status(201).json(saved)
   } catch (error) {
     next(error)
@@ -119,7 +124,174 @@ router.post('/:id/pause', async (req, res, next) => {
       return res.status(404).json({ error: 'Mission not found' })
     }
 
+    // Add orchestration log entry
+    mission.orchestrationLog.push({
+      timestamp: new Date(),
+      action: 'mission_paused',
+      details: { reason: req.body.reason || 'Manually paused' }
+    })
+    await mission.save()
+
+    // Log activity
+    const reason = req.body.reason
+    await activityLog.missionPaused(mission.title, reason, mission._id.toString())
+
     res.json({ message: 'Mission paused', mission })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/missions/:id/resume - Resume paused mission
+router.post('/:id/resume', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    if (mission.status !== 'paused') {
+      return res.status(400).json({ error: 'Mission can only be resumed from paused status' })
+    }
+
+    mission.status = 'active'
+
+    // Add orchestration log entry
+    mission.orchestrationLog.push({
+      timestamp: new Date(),
+      action: 'mission_resumed',
+      details: {}
+    })
+    await mission.save()
+
+    // Log activity
+    await activityLog.missionResumed(mission.title, mission._id.toString())
+
+    res.json({ message: 'Mission resumed', mission })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/missions/:id/cancel - Cancel active mission
+router.post('/:id/cancel', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    if (mission.status === 'completed') {
+      return res.status(400).json({ error: 'Cannot cancel a completed mission' })
+    }
+
+    const previousStatus = mission.status
+    mission.status = 'completed' // Cancelled missions are marked as completed
+    mission.completedAt = new Date()
+
+    // Add orchestration log entry
+    mission.orchestrationLog.push({
+      timestamp: new Date(),
+      action: 'mission_cancelled',
+      details: {
+        previousStatus,
+        reason: req.body.reason || 'Manually cancelled'
+      }
+    })
+    await mission.save()
+
+    // Log activity
+    const reason = req.body.reason
+    await activityLog.missionCancelled(mission.title, reason, mission._id.toString())
+
+    res.json({ message: 'Mission cancelled', mission })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/missions/:id/progress - Get mission progress statistics
+router.get('/:id/progress', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    const tasks = await Task.find({ missionId: req.params.id })
+
+    const totalTasks = tasks.length
+    const completedTasks = tasks.filter(t => t.status === 'completed').length
+    const failedTasks = tasks.filter(t => t.status === 'failed').length
+    const pendingTasks = tasks.filter(t => t.status === 'pending').length
+    const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
+    const awaitingHumanTasks = tasks.filter(t => t.status === 'awaiting_human_response').length
+
+    // Get unique agents working on this mission
+    const agentIds = new Set()
+    tasks.forEach(task => {
+      if (task.assignedTo) {
+        agentIds.add(task.assignedTo)
+      }
+    })
+
+    // Calculate progress percentage
+    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
+    res.json({
+      missionId: mission._id,
+      missionTitle: mission.title,
+      status: mission.status,
+      progress,
+      tasks: {
+        total: totalTasks,
+        completed: completedTasks,
+        failed: failedTasks,
+        pending: pendingTasks,
+        inProgress: inProgressTasks,
+        awaitingHuman: awaitingHumanTasks
+      },
+      agents: {
+        active: agentIds.size
+      },
+      startedAt: mission.startedAt,
+      completedAt: mission.completedAt,
+      duration: mission.startedAt && mission.completedAt
+        ? mission.completedAt.getTime() - mission.startedAt.getTime()
+        : null
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/missions/:id/timeline - Get orchestration timeline
+router.get('/:id/timeline', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    // Sort orchestration log by timestamp
+    const timeline = mission.orchestrationLog
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      .map(entry => ({
+        timestamp: entry.timestamp,
+        action: entry.action,
+        details: entry.details
+      }))
+
+    res.json({
+      missionId: mission._id,
+      missionTitle: mission.title,
+      timeline,
+      totalEvents: timeline.length
+    })
   } catch (error) {
     next(error)
   }
@@ -140,6 +312,9 @@ router.post('/:id/complete', async (req, res, next) => {
     if (!mission) {
       return res.status(404).json({ error: 'Mission not found' })
     }
+
+    // Log activity
+    await activityLog.missionCompleted(mission.title, mission._id.toString())
 
     res.json({ message: 'Mission completed', mission })
   } catch (error) {
@@ -195,6 +370,9 @@ router.post('/:id/orchestrate', async (req, res, next) => {
     mission.taskIds.push(initialTask._id as any)
     await mission.save()
 
+    // Log activity
+    await activityLog.missionOrchestrationStarted(mission.title, squadLead.name, mission._id.toString())
+
     res.status(200).json({
       message: 'Mission orchestration started',
       mission: {
@@ -230,6 +408,9 @@ router.delete('/:id', async (req, res, next) => {
     if (!mission) {
       return res.status(404).json({ error: 'Mission not found' })
     }
+
+    // Log activity before deleting
+    await activityLog.missionDeleted(mission.title, req.params.id)
 
     // Also delete all associated tasks
     await Task.deleteMany({ missionId: req.params.id })

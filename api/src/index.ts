@@ -11,6 +11,7 @@ import agentRoutes from './routes/agents.js'
 import taskRoutes from './routes/tasks.js'
 import modelsRoutes from './routes/models.js'
 import providersRoutes from './routes/providers.js'
+import activityRoutes from './routes/activity.js'
 
 // Credentials management - Eliminado (no necesitamos)
 // import configRoutes from './routes/config.js'
@@ -45,6 +46,7 @@ app.use('/api/agents', agentRoutes)
 app.use('/api/tasks', taskRoutes)
 app.use('/api/models', modelsRoutes)
 app.use('/api/providers', providersRoutes)
+app.use('/api/activity', activityRoutes)
 
 // Error handler
 app.use(errorHandler)

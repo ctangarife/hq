@@ -2,6 +2,8 @@ import { Router, Response } from 'express'
 import Agent from '../models/Agent.js'
 import { dockerService } from '../services/docker.service.js'
 import { getModelInfo, getProviderModels } from '../config/provider-models.js'
+import * as agentsMetricsService from '../services/agents-metrics.service.js'
+import { activityLog } from '../services/activity-logger.service.js'
 
 const router = Router()
 
@@ -87,6 +89,13 @@ router.post('/', async (req, res, next) => {
           warning: 'Agent created but container deployment failed'
         })
       }
+    }
+
+    // Log activity
+    await activityLog.agentCreated(savedAgent.name, savedAgent.role, savedAgent._id.toString())
+
+    if (savedAgent.containerId) {
+      await activityLog.agentDeployed(savedAgent.name, savedAgent.containerId, savedAgent._id.toString())
     }
 
     res.status(201).json(savedAgent)
@@ -176,7 +185,18 @@ router.put('/:id', async (req, res, next) => {
     if (containerRecreated) {
       response.containerRecreated = true
       response.message = 'Agent updated and container recreated with new model/provider'
+
+      // Log container recreation
+      await activityLog.containerRecreated(updatedAgent.name, newContainerId, updatedAgent._id.toString())
     }
+
+    // Log agent update
+    const changes: Record<string, any> = {}
+    if (providerChanged) changes.provider = { from: currentAgent.provider, to: updatedAgent.provider }
+    if (modelChanged) changes.llmModel = { from: currentAgent.llmModel, to: updatedAgent.llmModel }
+    if (req.body.name) changes.name = { from: currentAgent.name, to: updatedAgent.name }
+
+    await activityLog.agentUpdated(updatedAgent.name, changes, updatedAgent._id.toString())
 
     res.json(response)
   } catch (error) {
@@ -202,6 +222,9 @@ router.delete('/:id', async (req, res, next) => {
         // Continuar con eliminación del agente aunque falle Docker
       }
     }
+
+    // Log activity before deleting
+    await activityLog.agentDeleted(agent.name, agent._id.toString())
 
     // Eliminar agente de MongoDB
     await Agent.findByIdAndDelete(req.params.id)
@@ -250,6 +273,9 @@ router.post('/:id/deploy', async (req, res, next) => {
     agent.status = 'active'
     await agent.save()
 
+    // Log activity
+    await activityLog.agentDeployed(agent.name, containerId, agent._id.toString())
+
     res.json({
       message: 'Agent redeployed successfully',
       agent,
@@ -276,6 +302,9 @@ router.post('/:id/stop', async (req, res, next) => {
     agent.status = 'offline'
     await agent.save()
 
+    // Log activity
+    await activityLog.agentStopped(agent.name, agent._id.toString())
+
     res.json({ message: 'Agent stopped', agent })
   } catch (error) {
     next(error)
@@ -297,6 +326,9 @@ router.post('/:id/start', async (req, res, next) => {
     await dockerService.startContainer(agent.containerId)
     agent.status = 'active'
     await agent.save()
+
+    // Log activity
+    await activityLog.agentStarted(agent.name, agent._id.toString())
 
     res.json({ message: 'Agent started', agent })
   } catch (error) {
@@ -436,6 +468,9 @@ router.delete('/:id/container', async (req, res, next) => {
       return res.status(500).json({ error: 'Failed to remove container' })
     }
 
+    // Log activity
+    await activityLog.containerDestroyed(agent.name, agent._id.toString())
+
     // Actualizar agente para indicar que no tiene contenedor
     agent.containerId = undefined
     agent.status = 'offline'
@@ -446,6 +481,46 @@ router.delete('/:id/container', async (req, res, next) => {
       agentId: agent._id,
       agentName: agent.name
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/agents/metrics - Get metrics for all agents
+router.get('/metrics', async (req, res, next) => {
+  try {
+    const metrics = await agentsMetricsService.getAllAgentsMetrics()
+    res.json(metrics)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/agents/:id/metrics - Get metrics for a specific agent
+router.get('/:id/metrics', async (req, res, next) => {
+  try {
+    const metrics = await agentsMetricsService.getAgentMetrics(req.params.id)
+    if (!metrics) {
+      return res.status(404).json({ error: 'Agent not found or has no tasks' })
+    }
+    res.json(metrics)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/agents/metrics/system - Get system-wide metrics
+router.get('/metrics/system', async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query
+
+    const options = {
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined
+    }
+
+    const metrics = await agentsMetricsService.getSystemMetrics(options)
+    res.json(metrics)
   } catch (error) {
     next(error)
   }

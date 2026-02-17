@@ -60,6 +60,18 @@ const typeIcons = {
   container: '📦'
 }
 
+// Format timestamp safely
+const formatTimestamp = (timestamp: string | Date | undefined) => {
+  if (!timestamp) return '-'
+  try {
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
+    if (isNaN(date.getTime())) return '-'
+    return date.toLocaleString()
+  } catch {
+    return '-'
+  }
+}
+
 // Agrupar agentes por zona
 const agentsByZone = computed<ZoneAgents>(() => {
   const result: ZoneAgents = {
@@ -489,7 +501,7 @@ onUnmounted(() => {
               <div class="flex-1 min-w-0">
                 <p class="text-white text-sm break-words">{{ activity.message }}</p>
                 <p class="text-gray-500 text-xs mt-1">
-                  {{ new Date(activity.timestamp).toLocaleString() }}
+                  {{ formatTimestamp(activity.timestamp) }}
                 </p>
               </div>
             </div>

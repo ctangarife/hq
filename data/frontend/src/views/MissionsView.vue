@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { missionsService, tasksService } from '@/services/api'
+import MissionControlPanel from '@/components/MissionControlPanel.vue'
 
 interface Mission {
   _id: string
@@ -8,6 +9,7 @@ interface Mission {
   description: string
   objective?: string
   status: 'draft' | 'active' | 'paused' | 'completed'
+  priority: 'high' | 'medium' | 'low'
   createdAt: string
   squadLeadId?: string
   autoOrchestrate?: boolean
@@ -37,6 +39,7 @@ const showCreateModal = ref(false)
 const showTasksModal = ref(false)
 const showLogModal = ref(false)
 const showHumanResponseModal = ref(false)
+const showControlPanelModal = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -216,6 +219,12 @@ const openHumanResponseModal = async (mission: Mission) => {
   showHumanResponseModal.value = true
 }
 
+// Open control panel modal
+const openControlPanel = (mission: Mission) => {
+  selectedMission.value = mission
+  showControlPanelModal.value = true
+}
+
 // Submit human response
 const submitHumanResponse = async () => {
   if (!selectedHumanTask.value || !humanResponse.value.trim()) {
@@ -352,6 +361,15 @@ onMounted(() => {
               title="Ver tareas de la misión"
             >
               📋 Tareas
+            </button>
+
+            <!-- Control Panel Button -->
+            <button
+              @click="openControlPanel(mission)"
+              class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm transition"
+              title="Panel de control de misión"
+            >
+              🎮 Control
             </button>
 
             <!-- Status Actions -->
@@ -582,6 +600,29 @@ onMounted(() => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Panel Modal -->
+    <div v-if="showControlPanelModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
+        <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
+          <h2 class="text-xl font-bold text-white">Panel de Control: {{ selectedMission.title }}</h2>
+          <button
+            @click="showControlPanelModal = false"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="p-4">
+          <MissionControlPanel
+            v-if="selectedMission"
+            :mission="selectedMission"
+            @refresh="fetchMissions"
+          />
         </div>
       </div>
     </div>

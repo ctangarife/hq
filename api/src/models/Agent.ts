@@ -25,7 +25,7 @@ const agentSchema = new Schema({
   role: { type: String, required: true },
   personality: { type: String, default: 'You are a helpful AI assistant.' },
   capabilities: [{ type: String }],
-  llmModel: { type: String, default: 'glm-4-plus' },
+  llmModel: { type: String, default: 'glm-4.7' },
   provider: { type: String, default: 'zai' },
   apiKey: { type: String },
   containerId: { type: String },

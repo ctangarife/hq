@@ -17,7 +17,7 @@ const config = {
   agentName: process.env.AGENT_NAME || 'HQ Agent',
   agentRole: process.env.AGENT_ROLE || 'Assistant',
   llmProvider: process.env.LLM_PROVIDER || 'zai',
-  llmModel: process.env.LLM_MODEL || 'glm-4',
+  llmModel: process.env.LLM_MODEL || 'glm-4.7',
   hqApiUrl: process.env.HQ_API_URL || 'http://api:3001/api',
   hqApiToken: process.env.HQ_API_TOKEN || 'hq-agent-token',
   pollInterval: parseInt(process.env.POLL_INTERVAL || '5000', 10),
