@@ -101,6 +101,99 @@ Cuando el Squad Lead necesita más información del usuario:
 8. Squad Lead continúa análisis con la información proporcionada
 ```
 
+### Sistema de Reintentos y Auditor Agent
+
+HQ implementa un sistema robusto de manejo de fallos con reintentos automáticos y un agente auditor inteligente.
+
+#### Flujo de Reintentos Automáticos
+
+```
+1. Tarea falla por primera vez
+   ↓
+2. Sistema registra reintento (retryCount: 1/3)
+   ↓
+3. Tarea vuelve a estado 'pending'
+   ↓
+4. Agente la reintenta automáticamente
+   ↓
+5. Si falla nuevamente → retryCount: 2/3
+   ↓
+6. Si falla por tercera vez → retryCount: 3/3 (máximo alcanzado)
+   ↓
+7. Sistema crea tarea de auditoría automáticamente
+   ↓
+8. Agente Auditor analiza y decide acción:
+   - 🔄 RETRY - Error temporal, dar intento extra
+   - ✏️ REFINE - Descripción confusa, mejorarla
+   - 👤 REASSIGN - Agente incorrecto, reasignar
+   - 👥 ESCALATE_HUMAN - Faltan datos, pedir a usuario
+   ↓
+9. Decisión se aplica y tarea continúa
+```
+
+#### Templates de Agentes
+
+| Template | Rol | Capacidades | LLM |
+|----------|-----|-------------|------|
+| squad_lead | squad_lead | mission_analysis, task_planning, agent_coordination | glm-4-plus |
+| researcher | researcher | web_search, data_analysis, fact_checking | glm-4 |
+| developer | developer | code_execution, code_review, debugging | glm-4 |
+| writer | writer | content_generation, editing, documentation | glm-4 |
+| analyst | analyst | data_analysis, statistics, reporting | glm-4 |
+| **auditor** | **auditor** | **error_analysis, task_refinement, agent_reassignment, human_escalation** | **glm-4-plus** |
+
+#### Indicadores Visuales en Frontend
+
+| Indicador | Significado | Acción |
+|-----------|-------------|--------|
+| 🔁 1/3 (amarillo) | Un reintento fallido | Clic para ver historial |
+| 🔁 2/3 (amarillo) | Dos reintentos fallidos | Clic para ver historial |
+| 🔁 3/3 (rojo) | Máximo de reintentos alcanzado | Clic para ver historial + acciones |
+| 🔍 Auditoría pendiente (parpadeando) | Requiere intervención | Clic para decidir manualmente |
+| 🎭 En auditoría | Auditor está revisando | Clic para ver estado |
+
+#### Decisión Manual de Auditoría
+
+Si una tarea alcanza el máximo de reintentos, el usuario puede intervenir como "super auditor":
+
+1. Hacer clic en el badge `🔍 Auditoría pendiente`
+2. Se abre el modal de historial con los 3 intentos fallidos
+3. Hacer clic en `⚖️ Decidir Manualmente`
+4. Seleccionar acción:
+   - **🔄 REINTENTAR** - Error temporal de red, timeout, rate limit
+   - **✏️ REFINAR** - Tarea mal definida, descripción confusa
+   - **👤 REASIGNAR** - Agente no tiene habilidades necesarias
+   - **👥 ESCALAR A HUMANO** - Faltan datos, archivos o contexto
+5. Proporcionar razón de la decisión
+6. Sistema aplica la decisión automáticamente
+
+#### Endpoints de Auditoría
+
+```bash
+# Reintentar tarea manualmente
+curl -X POST http://localhost:3001/api/tasks/{taskId}/retry \
+  -H "Authorization: Bearer hq-agent-token" \
+  -H "Content-Type: application/json"
+
+# Procesar decisión de auditor (manual)
+curl -X POST http://localhost:3001/api/tasks/{taskId}/auditor-decision \
+  -H "Authorization: Bearer hq-agent-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "decision": "retry|refine|reassign|escalate_human",
+    "reason": "Explicación de la decisión",
+    "suggestedAgentRole": "developer",  // solo para reassign
+    "refinedDescription": "Nueva descripción",  // solo para refine
+    "questionForHuman": "Qué necesitas?"  // solo para escalate_human
+  }'
+```
+
+### Documentación Completa
+
+Para más detalles, ver:
+- [doc/SQUAD_LEAD_FLOW.md](./doc/SQUAD_LEAD_FLOW.md) - Flujo completo de Squad Lead
+- [doc/RETRY_AUDIT_TESTS.md](./doc/RETRY_AUDIT_TESTS.md) - Tests del sistema de reintentos
+
 ### Templates de Agentes
 
 | Template | Rol | Capacidades | LLM |
@@ -630,11 +723,17 @@ curl -X POST http://localhost:3001/api/agents \
 - [x] Phase 2: OpenClaw Integration
 - [x] Phase 3: Provider Management (MongoDB)
 - [x] Phase 4: Squad Lead Orchestration
-- [ ] Phase 5: Dashboard UI completo
-- [ ] Phase 6: Telegram Integration avanzada
-- [ ] Phase 7: Multi-agent collaboration mejorada
+- [x] Phase 5: Dashboard UI
+- [x] Phase 6: Archivos y Entregables
+- [x] Phase 7: Sistema de Reintentos y Auditor Agent
+- [ ] Phase 8: Outputs en Tiempo Real
+- [ ] Phase 9: Optimización de Asignación de Agentes
+- [ ] Phase 10: Mejoras de UX
+- [ ] Phase 11: Telegram Integration
 
-## Estado Actual (2026-02-16)
+Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
+
+## Estado Actual (2026-02-18)
 
 ### Funcionalidades Activas
 - ✅ OpenClaw-based agents con sincronización de credenciales desde MongoDB
@@ -645,6 +744,8 @@ curl -X POST http://localhost:3001/api/agents \
 - ✅ Human Input Flow - Squad Lead puede solicitar información al usuario
 - ✅ Isometric Activity View - Vista visual de agentes en zonas (Work Control, Work Area, Lounge)
 - ✅ SSE Activity Stream - Stream de eventos en tiempo real
+- ✅ **File Management** - Subida y adjuntación de archivos a misiones
+- ✅ **Retry & Auditor System** - Reintentos automáticos y agente auditor inteligente
 
 ### Templates de Agentes Disponibles
 
@@ -655,16 +756,15 @@ curl -X POST http://localhost:3001/api/agents \
 | developer | developer | glm-4 | Ejecución de código, debugging |
 | writer | writer | glm-4 | Generación de contenido |
 | analyst | analyst | glm-4 | Análisis de datos y estadísticas |
+| **auditor** | **auditor** | **glm-4-plus** | **Analiza fallos y decide recuperación (reassign/refine/retry/escalate)** |
 
 ### Agentes Deployados
-- **Cabezón** (Squad Lead) - MiniMax M2.1 - Listo para orquestar misiones
-- **MiniMax M2.1 Test** (Assistant) - MiniMax M2.1 - Para pruebas
+- **Cabezón** (Squad Lead) - Z.ai glm-4-plus - Listo para orquestar misiones
 
-### Próximos Pasos
-1. Dashboard UI para crear misiones con orquestación
-2. Mejorar gestión de agentes (logs viewer, metrics)
-3. Implementar integración Telegram completa
-4. Visualización de tareas y dependencias
+### Próximos Pasos (Phase 8)
+1. **Streaming de Outputs** - Ver outputs parciales mientras agentes trabajan
+2. **Consolidación de Outputs** - Generar PDFs con resultados finales
+3. **Sistema de Scoring** - Asignación inteligente de agentes a tareas
 
 ## Troubleshooting
 
