@@ -59,6 +59,7 @@ services:
       AGENT_BASE_IMAGE: ${AGENT_BASE_IMAGE}
       AGENT_NETWORK: ${AGENT_NETWORK}
       AGENT_WORKSPACE_PATH: ${AGENT_WORKSPACE_PATH}
+      HQ_FILES_PATH: ${HQ_FILES_PATH:-/data/hq-files}
       # Telegram
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL}
@@ -83,6 +84,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Workspace compartido con agentes
       - agent_workspace:${AGENT_WORKSPACE_PATH}
+      # Mission files - Archivos de misiones (inputs, outputs, artifacts)
+      - hq_files:/data/hq-files
     depends_on:
       mongodb:
         condition: service_healthy
@@ -183,6 +186,9 @@ volumes:
     driver: local
   agent_browser_workspace:
     driver: local
+  hq_files:
+    driver: local
+    name: hq_files
 
   # ---------------------------------------------------------------------------
   # NETWORKS - Redes Docker

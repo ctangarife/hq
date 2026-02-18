@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { tasksService, missionsService, agentsService } from '@/services/api'
 
 interface Task {
@@ -28,6 +28,7 @@ const showEditModal = ref(false)
 const submitting = ref(false)
 const updating = ref<string | null>(null)
 const editingTask = ref<Task | null>(null)
+const selectedMissionId = ref<string>('')  // NEW: Filtro por misión
 
 // SSE connection
 let taskEventSource: EventSource | null = null
@@ -65,8 +66,23 @@ const columns = {
 }
 
 const getTasksByStatus = (status: string) => {
-  return tasks.value.filter(t => t.status === status)
+  let filteredTasks = tasks.value
+
+  // Aplicar filtro por misión si está seleccionado
+  if (selectedMissionId.value) {
+    filteredTasks = filteredTasks.filter(t => t.missionId === selectedMissionId.value)
+  }
+
+  return filteredTasks.filter(t => t.status === status)
 }
+
+// Tareas filtradas (para mostrar contador)
+const filteredTasksCount = computed(() => {
+  if (selectedMissionId.value) {
+    return tasks.value.filter(t => t.missionId === selectedMissionId.value).length
+  }
+  return tasks.value.length
+})
 
 // Helper para obtener el nombre de la misión de una tarea
 const getMissionTitle = (task: Task) => {
@@ -335,17 +351,44 @@ onUnmounted(() => {
 <template>
   <div class="p-6">
     <!-- Header -->
-    <header class="flex justify-between items-center mb-8">
-      <div>
-        <h1 class="text-3xl font-bold text-white">Tareas</h1>
-        <p class="text-gray-400 mt-1">Tablero Kanban del squad (arrastra para mover)</p>
+    <header class="mb-8">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h1 class="text-3xl font-bold text-white">Tareas</h1>
+          <p class="text-gray-400 mt-1">Tablero Kanban del squad (arrastra para mover)</p>
+        </div>
+        <button
+          @click="showCreateModal = true"
+          class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
+        >
+          + Nueva Tarea
+        </button>
       </div>
-      <button
-        @click="showCreateModal = true"
-        class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition"
-      >
-        + Nueva Tarea
-      </button>
+
+      <!-- Mission Filter -->
+      <div class="flex items-center gap-4 bg-gray-800 rounded-lg p-3 border border-gray-700">
+        <label class="text-gray-400 text-sm whitespace-nowrap">Filtrar por Misión:</label>
+        <select
+          v-model="selectedMissionId"
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+          <option value="">Todas las misiones</option>
+          <option v-for="mission in missions" :key="mission._id" :value="mission._id">
+            {{ mission.title }}
+          </option>
+        </select>
+        <span class="text-gray-500 text-sm whitespace-nowrap">
+          {{ filteredTasksCount }} tarea{{ filteredTasksCount !== 1 ? 's' : '' }}
+        </span>
+        <button
+          v-if="selectedMissionId"
+          @click="selectedMissionId = ''"
+          class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm transition"
+          title="Limpiar filtro"
+        >
+          ✕
+        </button>
+      </div>
     </header>
 
     <!-- Error State -->

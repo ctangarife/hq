@@ -91,4 +91,74 @@ export const activityService = {
   subscribe: () => new EventSource(`${API_URL}/activity/stream`)
 }
 
+export const attachmentsService = {
+  // Upload file and create attachment
+  upload: (missionId: string, file: File, type?: string, taskId?: string, description?: string, role?: string) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('missionId', missionId)
+    if (taskId) formData.append('taskId', taskId)
+    if (type) formData.append('type', type)
+    if (description) formData.append('description', description)
+    if (role) formData.append('role', role)
+
+    return api.post('/attachments/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  // List attachments for mission
+  getByMission: (missionId: string, type?: string) =>
+    api.get(`/attachments/mission/${missionId}${type ? `?type=${type}` : ''}`),
+  // List attachments for task
+  getByTask: (taskId: string) => api.get(`/attachments/task/${taskId}`),
+  // Download attachment
+  download: (attachmentId: string) => {
+    const token = localStorage.getItem('hq_token')
+    window.open(`${API_URL}/attachments/${attachmentId}/download?token=${token}`, '_blank')
+  },
+  // Delete attachment
+  delete: (attachmentId: string) => api.delete(`/attachments/${attachmentId}`),
+  // Update attachment metadata
+  update: (attachmentId: string, data: { description?: string; role?: string; order?: number }) =>
+    api.patch(`/attachments/${attachmentId}`, data),
+  // Reorder attachments
+  reorder: (attachmentIds: string[]) => api.post('/attachments/reorder', { attachmentIds })
+}
+
+export const resourcesService = {
+  // Upload file to mission inputs
+  uploadToMission: (missionId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    return api.post(`/resources/mission/${missionId}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+  // Save URL as resource
+  saveURL: (missionId: string, url: string, title?: string) =>
+    api.post(`/resources/mission/${missionId}/upload-url`, { url, title }),
+  // List mission files
+  getMissionFiles: (missionId: string) => api.get(`/resources/mission/${missionId}/files`),
+  // Download mission input file
+  downloadMissionFile: (missionId: string, filename: string) => {
+    const token = localStorage.getItem('hq_token')
+    window.open(`${API_URL}/resources/mission/${missionId}/download/${filename}?token=${token}`, '_blank')
+  },
+  // Download final output
+  downloadOutput: (missionId: string, format: 'md' | 'pdf' = 'md') => {
+    const token = localStorage.getItem('hq_token')
+    window.open(`${API_URL}/resources/mission/${missionId}/outputs/download?format=${format}&token=${token}`, '_blank')
+  },
+  // Consolidate mission outputs
+  consolidate: (missionId: string) => api.post(`/resources/mission/${missionId}/consolidate`),
+  // Get mission size
+  getSize: (missionId: string) => api.get(`/resources/mission/${missionId}/size`),
+  // Get task output
+  getTaskOutput: (taskId: string, missionId: string) => api.get(`/resources/task/${taskId}/output?missionId=${missionId}`),
+  // Stream task output (SSE)
+  streamTaskOutput: (taskId: string, missionId: string) =>
+    new EventSource(`${API_URL}/resources/task/${taskId}/stream?missionId=${missionId}`)
+}
+
 export default api

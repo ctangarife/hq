@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { missionsService, tasksService } from '@/services/api'
+import { missionsService, tasksService, attachmentsService } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
+import FileUploader from '@/components/FileUploader.vue'
 
 interface Mission {
   _id: string
@@ -33,6 +34,16 @@ interface HumanTask {
   }
 }
 
+interface UploadedFile {
+  attachmentId: string
+  resourceId: string
+  originalName: string
+  mimeType: string
+  size: number
+  type: string
+  order: number
+}
+
 const missions = ref<Mission[]>([])
 const humanTasks = ref<HumanTask[]>([])
 const showCreateModal = ref(false)
@@ -40,6 +51,7 @@ const showTasksModal = ref(false)
 const showLogModal = ref(false)
 const showHumanResponseModal = ref(false)
 const showControlPanelModal = ref(false)
+const showFilesModal = ref(false)  // NEW
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -50,6 +62,7 @@ const selectedHumanTask = ref<HumanTask | null>(null)
 const missionTasks = ref<any[]>([])
 const orchestrationLog = ref<any[]>([])
 const humanResponse = ref('')
+const missionAttachments = ref<UploadedFile[]>([])  // NEW
 
 // Form data
 const formData = ref({
@@ -225,6 +238,43 @@ const openControlPanel = (mission: Mission) => {
   showControlPanelModal.value = true
 }
 
+// Open files modal
+const openFilesModal = async (mission: Mission) => {
+  selectedMission.value = mission
+  showFilesModal.value = true
+  await fetchMissionAttachments(mission._id)
+}
+
+// Fetch mission attachments
+const fetchMissionAttachments = async (missionId: string) => {
+  try {
+    const response = await attachmentsService.getByMission(missionId)
+    missionAttachments.value = response.data.attachments || []
+  } catch (err) {
+    console.error('Error fetching attachments:', err)
+    missionAttachments.value = []
+  }
+}
+
+// Handle file uploaded
+const handleFileUploaded = async () => {
+  if (selectedMission.value) {
+    await fetchMissionAttachments(selectedMission.value._id)
+  }
+}
+
+// Handle file removed
+const handleFileRemoved = async (_attachmentId: string) => {
+  if (selectedMission.value) {
+    await fetchMissionAttachments(selectedMission.value._id)
+  }
+}
+
+// Download attachment
+const downloadAttachment = (attachment: UploadedFile) => {
+  attachmentsService.download(attachment.attachmentId)
+}
+
 // Submit human response
 const submitHumanResponse = async () => {
   if (!selectedHumanTask.value || !humanResponse.value.trim()) {
@@ -361,6 +411,15 @@ onMounted(() => {
               title="Ver tareas de la misión"
             >
               📋 Tareas
+            </button>
+
+            <!-- Files Button -->
+            <button
+              @click="openFilesModal(mission)"
+              class="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-sm transition"
+              title="Archivos de la misión"
+            >
+              📎 Archivos
             </button>
 
             <!-- Control Panel Button -->
@@ -623,6 +682,68 @@ onMounted(() => {
             :mission="selectedMission"
             @refresh="fetchMissions"
           />
+        </div>
+      </div>
+    </div>
+
+    <!-- Files Modal -->
+    <div v-if="showFilesModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-3xl border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
+          <div>
+            <h2 class="text-xl font-bold text-white">📎 Archivos: {{ selectedMission.title }}</h2>
+            <p class="text-gray-400 text-sm mt-1">Administra los archivos de entrada de la misión</p>
+          </div>
+          <button
+            @click="showFilesModal = false"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4">
+          <!-- File Uploader -->
+          <FileUploader
+            v-if="selectedMission"
+            :mission-id="selectedMission._id"
+            type="mission_input"
+            :existing-files="missionAttachments"
+            @uploaded="handleFileUploaded"
+            @removed="handleFileRemoved"
+          />
+
+          <!-- Existing Files List -->
+          <div v-if="missionAttachments.length > 0" class="mt-6">
+            <h3 class="text-lg font-semibold text-white mb-3">Archivos Adjuntos</h3>
+            <div class="space-y-2">
+              <div
+                v-for="file in missionAttachments"
+                :key="file.attachmentId"
+                class="flex items-center gap-3 p-3 bg-gray-900 rounded-lg border border-gray-700"
+              >
+                <span class="text-2xl">
+                  {{ file.mimeType.includes('pdf') ? '📄' :
+                     file.mimeType.includes('image') ? '🖼️' :
+                     file.mimeType.includes('excel') ? '📊' :
+                     file.mimeType.includes('code') ? '💻' : '📎' }}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-white font-medium truncate">{{ file.originalName }}</p>
+                  <p class="text-gray-500 text-xs">
+                    {{ (file.size / 1024).toFixed(1) }} KB · {{ file.type }}
+                  </p>
+                </div>
+                <button
+                  @click="downloadAttachment(file)"
+                  class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+                  title="Descargar"
+                >
+                  ⬇️
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

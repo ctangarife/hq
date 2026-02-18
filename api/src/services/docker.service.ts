@@ -44,6 +44,7 @@ export class DockerService {
     const image = process.env.AGENT_BASE_IMAGE || 'hq-agent:latest'
     const network = process.env.AGENT_NETWORK || 'hq-network'
     const workspacePath = process.env.AGENT_WORKSPACE_PATH || '/data/agent-workspace'
+    const filesPath = process.env.HQ_FILES_PATH || '/data/hq-files'
 
     // Variables de entorno para HQ Agent (imagen personalizada)
     const env: Record<string, string> = {
@@ -58,7 +59,9 @@ export class DockerService {
       LLM_PROVIDER: agent.provider,
       // MongoDB URI para que el agente pueda cargar API keys
       MONGO_URI: `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@mongodb:27017/${process.env.MONGODB_DATABASE}?authSource=admin`,
-      HQ_API_URL: process.env.HQ_API_URL || 'http://api:3001/api'
+      HQ_API_URL: process.env.HQ_API_URL || 'http://api:3001/api',
+      // Path a archivos de misiones (read-only para inputs, write para task outputs)
+      HQ_FILES_PATH: filesPath
     }
 
     // Agregar API key si el agente tiene una específica
@@ -83,7 +86,8 @@ export class DockerService {
       Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
       HostConfig: {
         Binds: [
-          `${workspacePath}/${agentId}:/data:rw`
+          `${workspacePath}/${agentId}:/data:rw`,
+          `${filesPath}:/data/hq-files:ro`  // Read-only access to mission files
         ],
         RestartPolicy: {
           Name: 'unless-stopped'
