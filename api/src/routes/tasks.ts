@@ -333,29 +333,39 @@ router.post('/:id/complete', async (req, res, next) => {
   }
 })
 
-// POST /api/tasks/:id/fail - Mark task as failed
+// POST /api/tasks/:id/fail - Mark task as failed and handle retry logic
 router.post('/:id/fail', async (req, res, next) => {
   try {
     const { error: errorMessage } = req.body
 
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
-      {
-        status: 'failed',
-        error: errorMessage,
-        completedAt: new Date()
-      },
-      { new: true }
-    )
+    const task = await Task.findById(req.params.id)
 
     if (!task) {
       return res.status(404).json({ error: 'Task not found' })
     }
 
+    // Record retry attempt
+    await task.recordRetry(errorMessage, task.assignedTo)
+
+    // Mark as failed
+    task.status = 'failed'
+    task.error = errorMessage
+    task.completedAt = new Date()
+    await task.save()
+
     // Log activity
     await activityLog.taskFailed(task.title, errorMessage, task._id.toString())
 
-    res.json({ message: 'Task marked as failed', task })
+    // Check if task needs audit (reached max retries)
+    const needsAudit = task.retryCount >= task.maxRetries && !task.auditorReviewId
+
+    res.json({
+      message: 'Task marked as failed',
+      task,
+      needsAudit,
+      retryCount: task.retryCount,
+      maxRetries: task.maxRetries
+    })
   } catch (error) {
     next(error)
   }
@@ -546,6 +556,267 @@ router.get('/human/list', async (req, res, next) => {
     const enrichedTasks = await enrichTasks(tasks)
 
     res.json(enrichedTasks)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/retry - Reintentar tarea manualmente
+router.post('/:id/retry', async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { forceNewAgent } = req.body  // Opción forzar asignación a diferente agente
+
+    const task = await Task.findById(id)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    // Verificar si puede ser reintentada
+    if (task.status !== 'failed') {
+      return res.status(400).json({ error: 'Only failed tasks can be retried' })
+    }
+
+    if (task.retryCount >= task.maxRetries) {
+      return res.status(400).json({
+        error: 'Task has reached maximum retries. Use auditor to review.',
+        needsAudit: true
+      })
+    }
+
+    if (task.auditorReviewId) {
+      return res.status(400).json({ error: 'Task is under auditor review' })
+    }
+
+    // Registrar reintento
+    await task.recordRetry('Manual retry by user', task.assignedTo)
+
+    // Resetear estado para que el agente la tome nuevamente
+    task.status = 'pending'
+    task.error = undefined
+
+    // Si se solicita nuevo agente, remover asignación actual
+    if (forceNewAgent) {
+      task.assignedTo = undefined
+    }
+
+    await task.save()
+
+    // Log activity
+    await activityLog.log({
+      type: 'task',
+      message: `Task "${task.title}" reattempted (attempt ${task.retryCount}/${task.maxRetries})`,
+      details: {
+        taskId: task._id.toString(),
+        missionId: task.missionId,
+        retryCount: task.retryCount
+      }
+    })
+
+    res.json({
+      message: 'Task queued for retry',
+      task: {
+        _id: task._id,
+        title: task.title,
+        retryCount: task.retryCount,
+        maxRetries: task.maxRetries,
+        status: task.status
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/auditor-decision - Recibir decisión del auditor
+// id puede ser:
+//   - ID de la tarea de auditoría (tiene input.failedTaskId)
+//   - ID directo de la tarea fallida (para uso manual/pruebas)
+router.post('/:id/auditor-decision', async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { decision, reason, suggestedAgentRole, refinedDescription, questionForHuman } = req.body
+
+    if (!decision || !['reassign', 'refine', 'escalate_human', 'retry'].includes(decision)) {
+      return res.status(400).json({ error: 'Invalid decision. Must be: reassign, refine, escalate_human, or retry' })
+    }
+
+    // Check if this is an audit task (has failedTaskId in input) or a failed task directly
+    const auditTask = await Task.findById(id)
+    let task
+
+    if (auditTask && auditTask.input?.failedTaskId) {
+      // This is an audit task - get the failed task ID from input
+      const failedTaskId = auditTask.input.failedTaskId
+      task = await Task.findById(failedTaskId)
+      if (!task) {
+        return res.status(404).json({ error: 'Failed task not found' })
+      }
+    } else if (auditTask && (auditTask.status === 'failed' || auditTask.retryCount > 0)) {
+      // This is the failed task itself - use directly
+      task = auditTask
+    } else {
+      return res.status(404).json({ error: 'Task not found or not a valid audit/failed task' })
+    }
+
+    switch (decision) {
+      case 'reassign':
+        // Find agent by suggested role
+        if (!suggestedAgentRole) {
+          return res.status(400).json({ error: 'suggestedAgentRole required for reassign' })
+        }
+
+        // Find an available agent with the suggested role
+        const newAgent = await Agent.findOne({
+          role: suggestedAgentRole,
+          status: 'idle',
+          containerId: { $exists: true, $ne: null }
+        })
+
+        if (!newAgent) {
+          return res.status(404).json({ error: `No available ${suggestedAgentRole} agent found` })
+        }
+
+        // Reassign to new agent
+        task.assignedTo = newAgent.containerId
+        task.status = 'pending'
+        task.error = undefined
+        task.auditorReviewId = undefined
+        await task.save()
+
+        await activityLog.log({
+          type: 'task',
+          message: `Task "${task.title}" reassigned from auditor decision`,
+          details: {
+            taskId: task._id.toString(),
+            missionId: task.missionId,
+            newAgentId: newAgent._id.toString(),
+            newAgentName: newAgent.name,
+            suggestedRole: suggestedAgentRole,
+            auditorReason: reason
+          }
+        })
+
+        res.json({
+          message: `Task reassigned to ${newAgent.name} (${suggestedAgentRole})`,
+          decision: 'reassign',
+          taskId: task._id,
+          newAgent: {
+            id: newAgent._id,
+            name: newAgent.name,
+            role: newAgent.role
+          }
+        })
+        break
+
+      case 'refine':
+        // Refinar descripción de la tarea
+        if (!refinedDescription) {
+          return res.status(400).json({ error: 'refinedDescription required for refine' })
+        }
+
+        task.description = refinedDescription
+        task.status = 'pending'
+        task.error = undefined
+        task.auditorReviewId = undefined
+        await task.save()
+
+        await activityLog.log({
+          type: 'task',
+          message: `Task "${task.title}" description refined by auditor`,
+          details: {
+            taskId: task._id.toString(),
+            missionId: task.missionId,
+            refinedDescription,
+            auditorReason: reason
+          }
+        })
+
+        res.json({
+          message: 'Task description refined',
+          decision: 'refine',
+          taskId: task._id,
+          newDescription: refinedDescription
+        })
+        break
+
+      case 'escalate_human':
+        // Escalar a humano - crear tarea human_input
+        const humanTask = new Task({
+          missionId: task.missionId,
+          title: `Input needed for task: ${task.title}`,
+          description: questionForHuman || `The auditor needs information:\n\n${reason}\n\nOriginal task: ${task.description}`,
+          type: 'human_input',
+          status: 'pending',
+          input: {
+            parentTaskId: task._id,
+            auditorTaskId: id,
+            originalTaskId: task._id.toString()
+          }
+        })
+        await humanTask.save()
+
+        // Marcar tarea como esperando respuesta humana
+        task.status = 'awaiting_human_response'
+        task.auditorReviewId = undefined
+        await task.save()
+
+        // Actualizar misión si es necesario
+        if (task.missionId) {
+          await Mission.findByIdAndUpdate(
+            task.missionId,
+            { awaitingHumanTaskId: humanTask._id.toString() }
+          )
+        }
+
+        await activityLog.log({
+          type: 'task',
+          message: `Task "${task.title}" escalated to human by auditor`,
+          details: {
+            taskId: task._id.toString(),
+            missionId: task.missionId,
+            humanTaskId: humanTask._id.toString(),
+            questionForHuman,
+            auditorReason: reason
+          }
+        })
+
+        res.json({
+          message: 'Task escalated to human',
+          decision: 'escalate_human',
+          humanTaskId: humanTask._id,
+          taskId: task._id
+        })
+        break
+
+      case 'retry':
+        // Reintentar con el mismo agente (resetear contador de retry)
+        task.retryCount = 0
+        task.maxRetries = (task.maxRetries || 3) + 1  // Dar un intento extra
+        task.status = 'pending'
+        task.error = undefined
+        task.auditorReviewId = undefined
+        await task.save()
+
+        await activityLog.log({
+          type: 'task',
+          message: `Task "${task.title}" queued for retry with extra attempt`,
+          details: {
+            taskId: task._id.toString(),
+            missionId: task.missionId,
+            newMaxRetries: task.maxRetries,
+            auditorReason: reason
+          }
+        })
+
+        res.json({
+          message: 'Task queued for retry with extra attempt',
+          decision: 'retry',
+          taskId: task._id,
+          newMaxRetries: task.maxRetries
+        })
+        break
+    }
   } catch (error) {
     next(error)
   }

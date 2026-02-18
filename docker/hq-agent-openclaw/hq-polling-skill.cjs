@@ -158,7 +158,7 @@ class HQPollingSkill {
 
   async failTask(taskId, error) {
     try {
-      await fetch(`${config.hqApiUrl}/tasks/${taskId}/fail`, {
+      const response = await fetch(`${config.hqApiUrl}/tasks/${taskId}/fail`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.hqApiToken}`,
@@ -166,9 +166,109 @@ class HQPollingSkill {
         },
         body: JSON.stringify({ error: error.message || String(error) })
       });
-      console.log(`❌ Tarea fallida: ${taskId}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`❌ Tarea fallida: ${taskId}`);
+
+        // Check if task needs audit (reached max retries)
+        if (data.needsAudit) {
+          console.log(`🔍 Tarea alcanzó máximo de reintentos - Creando auditoría`);
+          await this.createAuditTask(data.task, error);
+        }
+      }
     } catch (err) {
       console.error('Error failing task:', err.message);
+    }
+  }
+
+  /**
+   * Create an auditor_review task for a failed task
+   */
+  async createAuditTask(failedTask, error) {
+    try {
+      // Get retry history for context
+      const retryHistory = failedTask.retryHistory || [];
+      const retryInfo = retryHistory.map((r, i) =>
+        `Intento ${i + 1}: ${r.error} (${r.timestamp ? new Date(r.timestamp).toISOString() : 'unknown'})`
+      ).join('\n');
+
+      const auditTask = {
+        title: `Auditoría: ${failedTask.title}`,
+        description: `Analizar por qué falló esta tarea y decidir la mejor acción de recuperación.
+
+TAREA ORIGINAL:
+- Título: ${failedTask.title}
+- Descripción: ${failedTask.description || 'Sin descripción'}
+- Tipo: ${failedTask.type}
+- Agente asignado: ${failedTask.assignedTo || 'N/A'}
+- Rol de agente: ${failedTask.input?.agentRole || 'N/A'}
+
+ERROR:
+${error.message || String(error)}
+
+HISTORIAL DE REINTENTOS (${retryHistory.length}/${failedTask.maxRetries || 3}):
+${retryInfo}
+
+ANALIZA y decide la mejor acción:
+1. ¿El agente no tiene las habilidades necesarias? → REASSIGN
+2. ¿La tarea está mal definida? → REFINE
+3. ¿Falta información/archivos? → ESCALATE_HUMAN
+4. ¿Una tarea previa falló? → RECREATE
+5. ¿Error temporal (timeout, red)? → RETRY
+
+Responde SOLO con JSON (sin markdown, sin explicaciones):
+{
+  "decision": "reassign|refine|escalate_human|retry",
+  "reason": "Breve explicación",
+  "suggestedAgentRole": "researcher|developer|writer|analyst|null",
+  "refinedDescription": "Descripción mejorada de la tarea",
+  "questionForHuman": "Qué información necesitas?"
+}`,
+        type: 'auditor_review',
+        status: 'pending',
+        missionId: failedTask.missionId,
+        priority: 'high',
+        input: {
+          failedTaskId: failedTask._id,
+          originalTaskType: failedTask.type,
+          originalAssignedTo: failedTask.assignedTo,
+          originalAgentRole: failedTask.input?.agentRole,
+          error: error.message,
+          retryHistory: retryHistory,
+          retryCount: retryHistory.length
+        }
+      };
+
+      const response = await fetch(`${config.hqApiUrl}/tasks`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.hqApiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(auditTask)
+      });
+
+      if (response.ok) {
+        const auditTaskData = await response.json();
+        console.log(`✅ Tarea de auditoría creada: ${auditTaskData._id}`);
+
+        // Link failed task to audit task
+        await fetch(`${config.hqApiUrl}/tasks/${failedTask._id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${config.hqApiToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            auditorReviewId: auditTaskData._id
+          })
+        });
+      } else {
+        console.error('❌ Error creando tarea de auditoría');
+      }
+    } catch (err) {
+      console.error('Error creating audit task:', err.message);
     }
   }
 
@@ -307,6 +407,11 @@ class HQPollingSkill {
       // Special handling for mission_analysis tasks (Squad Lead)
       if (task.type === 'mission_analysis') {
         return await this.executeMissionAnalysis(task, startTime);
+      }
+
+      // Special handling for auditor_review tasks (Auditor agent)
+      if (task.type === 'auditor_review') {
+        return await this.executeAuditReview(task, startTime);
       }
 
       const result = await this.executeTaskWithLLM(task);
@@ -594,6 +699,134 @@ ONLY when you have specific, actionable details, create a JSON plan:
       console.error('Error creating human task:', error);
       await this.failTask(task._id, error);
       return false;
+    }
+  }
+
+  /**
+   * Execute an auditor_review task
+   * The auditor agent analyzes a failed task and decides on recovery action
+   */
+  async executeAuditReview(task, startTime) {
+    console.log('🔍 Ejecutando revisión de auditoría...');
+
+    const failedTaskId = task.input?.failedTaskId;
+    if (!failedTaskId) {
+      throw new Error('Audit task missing failedTaskId in input');
+    }
+
+    const messages = [
+      {
+        role: 'system',
+        content: `You are an Auditor AI agent specialized in analyzing failed tasks and deciding recovery actions.
+
+CRITICAL: You MUST respond with ONLY a valid JSON object (no markdown, no explanation text).
+
+Your decision will be executed automatically, so be precise.
+
+Decision types:
+- reassign: Assign to a different agent type (when agent lacks skills)
+- refine: Rewrite task description (when instructions are unclear)
+- escalate_human: Ask user for information (when data is missing)
+- retry: Try again with same agent (when error was temporary)
+
+Response format EXACTLY:
+{
+  "decision": "reassign|refine|escalate_human|retry",
+  "reason": "Brief explanation",
+  "suggestedAgentRole": "researcher|developer|writer|analyst|null",
+  "refinedDescription": "Clear task description",
+  "questionForHuman": "What information do you need?"
+}
+
+IMPORTANT: Only include fields relevant to your decision:
+- reassign: Include suggestedAgentRole
+- refine: Include refinedDescription
+- escalate_human: Include questionForHuman
+- retry: Only decision and reason needed`
+      },
+      {
+        role: 'user',
+        content: task.description
+      }
+    ];
+
+    try {
+      const result = await this.callLLM(messages);
+      const content = result.choices[0]?.message?.content || result.content || '';
+
+      console.log(`💡 Auditor Response (${Math.round((Date.now() - startTime) / 1000)}s):`);
+      console.log(content);
+      console.log('');
+
+      // Try to parse as JSON
+      let decision;
+      try {
+        decision = JSON.parse(content);
+      } catch (e) {
+        // Try to extract JSON from markdown code blocks
+        const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+        if (jsonMatch) {
+          decision = JSON.parse(jsonMatch[1]);
+        } else {
+          // Try to find any JSON object in the response
+          const objectMatch = content.match(/\{[\s\S]*\}/);
+          if (objectMatch) {
+            decision = JSON.parse(objectMatch[0]);
+          } else {
+            throw new Error('Auditor did not return valid JSON. Response was: ' + content.substring(0, 200));
+          }
+        }
+      }
+
+      // Validate decision field
+      if (!decision.decision || !['reassign', 'refine', 'escalate_human', 'retry'].includes(decision.decision)) {
+        throw new Error('Invalid decision: must be reassign, refine, escalate_human, or retry');
+      }
+
+      // Complete audit task with decision
+      await this.completeTask(task._id, {
+        success: true,
+        result: decision,
+        duration: Date.now() - startTime
+      });
+
+      // Execute the auditor's decision via API
+      console.log(`🎬 Ejecutando decisión del auditor: ${decision.decision}`);
+      await this.executeAuditorDecision(failedTaskId, decision);
+
+      return true;
+    } catch (error) {
+      console.error(`❌ Audit review failed: ${error.message}`);
+      await this.failTask(task._id, error);
+      return false;
+    }
+  }
+
+  /**
+   * Execute the auditor's decision on the failed task
+   */
+  async executeAuditorDecision(failedTaskId, decision) {
+    try {
+      const response = await fetch(`${config.hqApiUrl}/tasks/${failedTaskId}/auditor-decision`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.hqApiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(decision)
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to execute auditor decision: ${error}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ Decisión ejecutada: ${result.message}`);
+      return result;
+    } catch (error) {
+      console.error('Error executing auditor decision:', error.message);
+      throw error;
     }
   }
 

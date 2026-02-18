@@ -190,5 +190,8 @@ export const activityLog = {
       type: 'container',
       message: `Contenedor de agente "${agentName}" destruido`,
       details: { agentId, agentName, action: 'destroyed' }
-    })
+    }),
+
+  // Generic log function for custom activity logging
+  log: (options: LogOptions) => logActivity(options)
 }

@@ -2,12 +2,19 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { tasksService, missionsService, agentsService } from '@/services/api'
 
+interface RetryAttempt {
+  attempt: number
+  error: string
+  timestamp: string
+  agentId?: string
+}
+
 interface Task {
   _id: string
   title: string
   description?: string
   type?: string
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'awaiting_human_response'
   assignedTo?: string
   missionId?: string
   missionTitle?: string  // Título de la misión (enviado por API)
@@ -18,6 +25,12 @@ interface Task {
   updatedAt: string
   assignedAgent?: { _id: string; name: string }
   originalMissionId?: string // Para preservar la misión original al editar
+  // Phase 7: Retry & Auditor fields
+  retryCount?: number
+  maxRetries?: number
+  retryHistory?: RetryAttempt[]
+  auditorReviewId?: string
+  error?: string
 }
 
 const tasks = ref<Task[]>([])
@@ -25,10 +38,17 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
+const showRetryHistoryModal = ref(false)  // NEW: Modal de historial de reintentos
+const showManualAuditModal = ref(false)  // NEW: Modal para decisión manual de auditoría
 const submitting = ref(false)
 const updating = ref<string | null>(null)
 const editingTask = ref<Task | null>(null)
 const selectedMissionId = ref<string>('')  // NEW: Filtro por misión
+const selectedTaskForHistory = ref<Task | null>(null)  // NEW: Tarea seleccionada para ver historial
+const selectedTaskForAudit = ref<Task | null>(null)  // NEW: Tarea seleccionada para auditoría manual
+const manualAuditDecision = ref('')  // NEW: Decisión seleccionada
+const manualAuditReason = ref('')  // NEW: Razón de la decisión
+const manualAuditSubmitting = ref(false)  // NEW: Estado de envío de auditoría manual
 
 // SSE connection
 let taskEventSource: EventSource | null = null
@@ -187,6 +207,117 @@ const openEditModal = (task: Task) => {
     type: task.type || 'custom'
   }
   showEditModal.value = true
+}
+
+// Open retry history modal
+const openRetryHistoryModal = (task: Task) => {
+  selectedTaskForHistory.value = task
+  showRetryHistoryModal.value = true
+}
+
+// Format timestamp for display
+const formatTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp)
+  return date.toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// Get retry badge color based on retry count vs max retries
+const getRetryBadgeColor = (task: Task) => {
+  const retryCount = task.retryCount || 0
+  const maxRetries = task.maxRetries || 3
+
+  if (retryCount === 0) return 'bg-gray-600/50 text-gray-300'
+  if (retryCount < maxRetries) return 'bg-yellow-600/50 text-yellow-300'
+  return 'bg-red-600/50 text-red-300'
+}
+
+// Check if task needs audit
+const needsAudit = (task: Task) => {
+  return (task.retryCount || 0) >= (task.maxRetries || 3) && !task.auditorReviewId
+}
+
+// Open manual audit modal
+const openManualAuditModal = (task: Task) => {
+  selectedTaskForAudit.value = task
+  manualAuditDecision.value = ''
+  manualAuditReason.value = ''
+  showManualAuditModal.value = true
+}
+
+// Submit manual audit decision
+const submitManualAuditDecision = async () => {
+  if (!selectedTaskForAudit.value || !manualAuditDecision.value || !manualAuditReason.value) {
+    alert('Por favor selecciona una decisión y proporciona una razón')
+    return
+  }
+
+  try {
+    manualAuditSubmitting.value = true
+
+    const decisionData: any = {
+      decision: manualAuditDecision.value,
+      reason: manualAuditReason.value
+    }
+
+    // Add decision-specific fields
+    if (manualAuditDecision.value === 'reassign') {
+      const suggestedRole = prompt('Rol de agente sugerido (developer, researcher, writer, analyst):', 'developer')
+      if (!suggestedRole) {
+        alert('Debe especificar un rol de agente')
+        return
+      }
+      decisionData.suggestedAgentRole = suggestedRole
+    } else if (manualAuditDecision.value === 'refine') {
+      const refinedDesc = prompt('Descripción mejorada de la tarea:', selectedTaskForAudit.value.description || '')
+      if (!refinedDesc) {
+        alert('Debe proporcionar una descripción mejorada')
+        return
+      }
+      decisionData.refinedDescription = refinedDesc
+    } else if (manualAuditDecision.value === 'escalate_human') {
+      const question = prompt('Pregunta para el humano:', '¿Qué información adicional necesitas?')
+      if (!question) {
+        alert('Debe proporcionar una pregunta')
+        return
+      }
+      decisionData.questionForHuman = question
+    }
+
+    const response = await fetch(`/api/tasks/${selectedTaskForAudit.value._id}/auditor-decision`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || 'hq-agent-token'}`
+      },
+      body: JSON.stringify(decisionData)
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Error al procesar decisión')
+    }
+
+    // Close modal and refresh
+    showManualAuditModal.value = false
+    selectedTaskForAudit.value = null
+    manualAuditDecision.value = ''
+    manualAuditReason.value = ''
+
+    await fetchTasks()
+
+    alert('Decisión de auditoría aplicada correctamente')
+  } catch (err: any) {
+    console.error('Error submitting audit decision:', err)
+    alert(err.message || 'Error al procesar decisión de auditoría')
+  } finally {
+    manualAuditSubmitting.value = false
+  }
 }
 
 // Update task (full edit)
@@ -469,9 +600,44 @@ onUnmounted(() => {
               <span v-if="task.agentName" class="text-xs bg-purple-600/50 text-purple-300 px-2 py-1 rounded flex items-center gap-1">
                 👤 {{ task.agentName }}
               </span>
-              <span v-else class="text-xs text-gray-500 cursor-pointer hover:text-purple-400" @click="openEditModal(task)">
+              <span v-else class="text-xs text-gray-500 cursor-pointer hover:text-purple-400" @click.stop="openEditModal(task)">
                 + Asignar agente
               </span>
+
+              <!-- Retry Badge (Phase 7.4) -->
+              <span
+                v-if="task.retryCount && task.retryCount > 0"
+                :class="['text-xs px-2 py-1 rounded flex items-center gap-1 cursor-pointer hover:opacity-80 transition', getRetryBadgeColor(task)]"
+                @click.stop="openRetryHistoryModal(task)"
+                title="Ver historial de reintentos"
+              >
+                🔁 {{ task.retryCount }}/{{ task.maxRetries || 3 }}
+              </span>
+
+              <!-- Needs Audit Badge (Phase 7.4) - Now clickable! -->
+              <span
+                v-if="needsAudit(task)"
+                class="text-xs bg-red-600/50 text-red-300 px-2 py-1 rounded flex items-center gap-1 animate-pulse cursor-pointer hover:opacity-80 transition"
+                @click.stop="openRetryHistoryModal(task)"
+                title="Ver detalles y solicitar auditoría"
+              >
+                🔍 Auditoría pendiente
+              </span>
+
+              <!-- Under Audit Badge (Phase 7.4) - Also clickable -->
+              <span
+                v-if="task.auditorReviewId"
+                class="text-xs bg-indigo-600/50 text-indigo-300 px-2 py-1 rounded flex items-center gap-1 cursor-pointer hover:opacity-80 transition"
+                @click.stop="openRetryHistoryModal(task)"
+                title="Ver estado de auditoría"
+              >
+                🎭 En auditoría
+              </span>
+            </div>
+
+            <!-- Error Message (Phase 7.4) -->
+            <div v-if="task.error && task.status === 'failed'" class="mt-2 p-2 bg-red-900/20 border border-red-700/50 rounded">
+              <p class="text-red-400 text-xs line-clamp-2">{{ task.error }}</p>
             </div>
 
             <div class="flex justify-end mt-2">
@@ -658,6 +824,234 @@ onUnmounted(() => {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Retry History Modal (Phase 7.4) -->
+    <div v-if="showRetryHistoryModal && selectedTaskForHistory" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-700 max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            🔁 Historial de Reintentos
+          </h2>
+          <button
+            @click="showRetryHistoryModal = false; selectedTaskForHistory = null"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="overflow-y-auto flex-1">
+          <!-- Task Info -->
+          <div class="mb-4 p-3 bg-gray-700 rounded">
+            <h3 class="text-white font-medium">{{ selectedTaskForHistory.title }}</h3>
+            <p v-if="selectedTaskForHistory.description" class="text-gray-400 text-sm mt-1">
+              {{ selectedTaskForHistory.description }}
+            </p>
+            <div class="flex gap-2 mt-2">
+              <span class="text-xs bg-gray-600 text-gray-300 px-2 py-1 rounded">
+                Intentos: {{ selectedTaskForHistory.retryCount || 0 }}/{{ selectedTaskForHistory.maxRetries || 3 }}
+              </span>
+              <span v-if="selectedTaskForHistory.auditorReviewId" class="text-xs bg-indigo-600/50 text-indigo-300 px-2 py-1 rounded">
+                🎭 En auditoría
+              </span>
+            </div>
+          </div>
+
+          <!-- Retry History List -->
+          <div v-if="selectedTaskForHistory.retryHistory && selectedTaskForHistory.retryHistory.length > 0" class="space-y-3">
+            <h4 class="text-gray-400 text-sm font-medium">Intentos previos:</h4>
+            <div
+              v-for="(attempt, index) in selectedTaskForHistory.retryHistory"
+              :key="index"
+              class="p-3 bg-red-900/20 border border-red-700/50 rounded"
+            >
+              <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 w-8 h-8 bg-red-600/30 rounded-full flex items-center justify-center">
+                  <span class="text-red-300 text-sm font-medium">{{ attempt.attempt }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-red-400 text-sm font-medium">Intento #{{ attempt.attempt }}</span>
+                    <span v-if="attempt.agentId" class="text-xs bg-gray-600 text-gray-300 px-2 py-0.5 rounded">
+                      ID: {{ attempt.agentId.substring(0, 8) }}...
+                    </span>
+                  </div>
+                  <p class="text-red-300 text-sm">{{ attempt.error }}</p>
+                  <p class="text-gray-500 text-xs mt-1">
+                    {{ formatTimestamp(attempt.timestamp) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- No Retries Message -->
+          <div v-else class="text-center py-8">
+            <p class="text-gray-500">No hay intentos previos registrados</p>
+          </div>
+
+          <!-- Current Error -->
+          <div v-if="selectedTaskForHistory.error && selectedTaskForHistory.status === 'failed'" class="mt-4 p-3 bg-red-900/30 border border-red-700 rounded">
+            <h4 class="text-red-400 text-sm font-medium mb-1">Error actual:</h4>
+            <p class="text-red-300 text-sm">{{ selectedTaskForHistory.error }}</p>
+          </div>
+
+          <!-- Audit Info -->
+          <div v-if="needsAudit(selectedTaskForHistory)" class="mt-4 p-3 bg-orange-900/20 border border-orange-700 rounded">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-orange-400">🔍</span>
+              <h4 class="text-orange-400 text-sm font-medium">Requiere auditoría</h4>
+            </div>
+            <p class="text-gray-300 text-sm mb-3">
+              Esta tarea ha alcanzado el máximo de reintentos. Puedes:
+            </p>
+            <div class="flex gap-2">
+              <button
+                @click="openManualAuditModal(selectedTaskForHistory)"
+                class="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm transition"
+                title="Decidir manualmente qué hacer con esta tarea"
+              >
+                ⚖️ Decidir Manualmente
+              </button>
+              <button
+                @click="showRetryHistoryModal = false; selectedTaskForHistory = null"
+                class="px-3 py-2 bg-gray-600 hover:bg-gray-700 text-gray-300 rounded text-sm transition"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Audit Decision Modal (Phase 7.4) -->
+    <div v-if="showManualAuditModal && selectedTaskForAudit" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-700 max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            ⚖️ Decisión de Auditoría Manual
+          </h2>
+          <button
+            @click="showManualAuditModal = false; selectedTaskForAudit = null"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Task Summary -->
+        <div class="mb-4 p-3 bg-gray-700 rounded">
+          <h3 class="text-white font-medium">{{ selectedTaskForAudit.title }}</h3>
+          <p v-if="selectedTaskForAudit.description" class="text-gray-400 text-sm mt-1">
+            {{ selectedTaskForAudit.description }}
+          </p>
+          <div class="flex gap-2 mt-2 text-xs">
+            <span class="bg-red-600/50 text-red-300 px-2 py-1 rounded">
+              {{ selectedTaskForAudit.retryCount }}/{{ selectedTaskForAudit.maxRetries }} reintentos fallidos
+            </span>
+            <span class="bg-gray-600 text-gray-300 px-2 py-1 rounded">
+              Tipo: {{ selectedTaskForAudit.type || 'custom' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Decision Options -->
+        <div class="space-y-3">
+          <h4 class="text-gray-300 text-sm font-medium">Selecciona una acción:</h4>
+
+          <div class="grid grid-cols-2 gap-2">
+            <!-- RETRY -->
+            <button
+              @click="manualAuditDecision = 'retry'"
+              :class="['p-3 rounded border text-left transition', manualAuditDecision === 'retry' ? 'border-blue-500 bg-blue-900/30' : 'border-gray-600 hover:border-gray-500']"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-blue-400">🔄</span>
+                <span class="text-white font-medium">REINTENTAR</span>
+              </div>
+              <p class="text-gray-400 text-xs">El error fue temporal. Reiniciar contador y dar un intento extra.</p>
+            </button>
+
+            <!-- REFINE -->
+            <button
+              @click="manualAuditDecision = 'refine'"
+              :class="['p-3 rounded border text-left transition', manualAuditDecision === 'refine' ? 'border-purple-500 bg-purple-900/30' : 'border-gray-600 hover:border-gray-500']"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-purple-400">✏️</span>
+                <span class="text-white font-medium">REFINAR</span>
+              </div>
+              <p class="text-gray-400 text-xs">La descripción de la tarea no está clara. Mejorarla y reintentar.</p>
+            </button>
+
+            <!-- REASSIGN -->
+            <button
+              @click="manualAuditDecision = 'reassign'"
+              :class="['p-3 rounded border text-left transition', manualAuditDecision === 'reassign' ? 'border-green-500 bg-green-900/30' : 'border-gray-600 hover:border-gray-500']"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-green-400">👤</span>
+                <span class="text-white font-medium">REASIGNAR</span>
+              </div>
+              <p class="text-gray-400 text-xs">El agente actual no tiene las habilidades necesarias. Asignar a otro.</p>
+            </button>
+
+            <!-- ESCALATE TO HUMAN -->
+            <button
+              @click="manualAuditDecision = 'escalate_human'"
+              :class="['p-3 rounded border text-left transition', manualAuditDecision === 'escalate_human' ? 'border-yellow-500 bg-yellow-900/30' : 'border-gray-600 hover:border-gray-500']"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-yellow-400">👥</span>
+                <span class="text-white font-medium">ESCALAR A HUMANO</span>
+              </div>
+              <p class="text-gray-400 text-xs">Falta información o archivos necesarios. Pedir al usuario.</p>
+            </button>
+          </div>
+
+          <!-- Reason Input -->
+          <div v-if="manualAuditDecision" class="mt-4">
+            <label class="block text-gray-400 text-sm mb-2">Razón de la decisión:</label>
+            <textarea
+              v-model="manualAuditReason"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+              rows="3"
+              placeholder="Explica por qué tomas esta decisión..."
+            ></textarea>
+          </div>
+
+          <!-- Decision Explanation -->
+          <div v-if="manualAuditDecision" class="mt-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded">
+            <p class="text-blue-300 text-sm">
+              <strong>¿Qué hará esta decisión?</strong><br>
+              <span v-if="manualAuditDecision === 'retry'">Se reiniciará el contador de reintentos y se dará un intento extra a la tarea.</span>
+              <span v-else-if="manualAuditDecision === 'refine'">Se te pedirá que ingreses una descripción mejorada de la tarea.</span>
+              <span v-else-if="manualAuditDecision === 'reassign'">Se te pedirá que especifiques el rol del agente que debe tomar la tarea.</span>
+              <span v-else-if="manualAuditDecision === 'escalate_human'">Se creará una tarea para que el humano proporcione la información faltante.</span>
+            </p>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex gap-2 justify-end mt-4">
+            <button
+              @click="showManualAuditModal = false; selectedTaskForAudit = null; manualAuditDecision = ''; manualAuditReason = ''"
+              class="px-4 py-2 text-gray-400 hover:text-white transition"
+              :disabled="manualAuditSubmitting"
+            >
+              Cancelar
+            </button>
+            <button
+              @click="submitManualAuditDecision"
+              :disabled="manualAuditSubmitting || !manualAuditDecision || !manualAuditReason"
+              class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded transition disabled:opacity-50"
+            >
+              {{ manualAuditSubmitting ? 'Procesando...' : 'Aplicar Decisión' }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

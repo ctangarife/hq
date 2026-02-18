@@ -18,6 +18,12 @@ Este documento describe las características planificadas y mejoras futuras del 
   - 6.1: Estructura de archivos y volumen Docker
   - 6.2: Modelos Resource y Attachment
   - 6.3: Frontend FileUploader component
+- **Phase 7** ✅ - Sistema de Reintentos y Auditor Agent COMPLETO
+  - 7.1: Modelo de Reintentos (retryCount, maxRetries, retryHistory)
+  - 7.2: Agente Auditor (template con 5 categorías de análisis)
+  - 7.3: Flujo de Auditoría (creación automática de tareas de auditoría)
+  - 7.4: Frontend - Visualización (badges clickeables, modal de historial)
+  - 7.5: Pruebas End-to-End (test suite completo)
 
 ---
 
@@ -71,40 +77,61 @@ Este documento describe las características planificadas y mejoras futuras del 
 
 ---
 
-### 🔥 Phase 7: Sistema de Reintentos y Auditor Agent (PRIORIDAD ALTA)
+### ✅ Phase 7: Sistema de Reintentos y Auditor Agent (COMPLETADO)
 
 **Objetivo**: Manejo robusto de fallos con reintentos automáticos y un agente auditor inteligente.
 
-#### 7.1 Modelo de Reintentos
-- [ ] Agregar campos a `Task.ts`:
+#### 7.1 Modelo de Reintentos ✅
+- [x] Agregar campos a `Task.ts`:
   - `retryCount: number` - Número de intentos actuales
   - `maxRetries: number` - Máximo de reintentos (default: 3)
   - `retryHistory: Array<{attempt: number, error: string, timestamp: Date}>`
-- [ ] Modificar polling del agente para implementar lógica de reintentos
-- [ ] Endpoint: `POST /api/tasks/:id/retry` - Reintentar tarea manualmente
+  - `auditorReviewId: string` - ID de tarea de auditoría
+- [x] Métodos: `needsRetry()`, `recordRetry()`, `requestAudit()`
+- [x] Modificar polling del agente para implementar lógica de reintentos
+- [x] Endpoint: `POST /api/tasks/:id/retry` - Reintentar tarea manualmente
 
-**Archivos**: `api/src/models/Task.ts`, `docker/hq-agent-openclaw/hq-polling-skill.cjs`
+**Archivos**: `api/src/models/Task.ts`, `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `api/src/routes/tasks.ts` ✅ Done
 
-#### 7.2 Agente Auditor
-- [ ] Crear template `auditor` en `agent-templates.ts`
-- [ ] Capabilities: `error_analysis`, `task_refinement`, `agent_reassignment`, `human_escalation`
-- [ ] System prompt optimizado para análisis de fallos
-- [ ] Lógica de decisión:
-  - AGENTE_INADECUADO → Reasignar a diferente agente
-  - TAREA_MAL_DEFINIDA → Refinar descripción
-  - INPUT_FALTANTE → Crear tarea human_input
-  - DEPENDENCIA_ROTA → Recrear tarea previa
-  - ERROR_TECNICO → Reintentar (hasta 3)
+#### 7.2 Agente Auditor ✅
+- [x] Crear template `auditor` en `agent-templates.ts`
+- [x] Capabilities: `error_analysis`, `task_refinement`, `agent_reassignment`, `human_escalation`, `root_cause_analysis`
+- [x] System prompt optimizado para análisis de fallos
+- [x] Lógica de decisión:
+  - AGENTE_INADECUADO → REASSIGN (reasignar a diferente agente)
+  - TAREA_MAL_DEFINIDA → REFINE (refinar descripción)
+  - INPUT_FALTANTE → ESCALATE_HUMAN (crear tarea human_input)
+  - DEPENDENCIA_ROTA → RECREATE (recrear tarea previa)
+  - ERROR_TECNICO → RETRY (reintentar con +1 maxRetries)
 
-**Archivos**: `api/src/config/agent-templates.ts`
+**Archivos**: `api/src/config/agent-templates.ts` ✅ Done
 
-#### 7.3 Flujo de Auditoría
-- [ ] Modificar `hq-polling-skill.cjs` para crear tarea de auditoría después de 3 fallos
-- [ ] Crear tarea tipo `auditor_review` automáticamente
-- [ ] Endpoint: `POST /api/tasks/:id/auditor-decision` - Recibir decisión del auditor
-- [ ] Implementar acciones: reassign, refine, escalate_human
+#### 7.3 Flujo de Auditoría ✅
+- [x] Modificar `hq-polling-skill.cjs` para crear tarea de auditoría después de 3 fallos
+- [x] Crear tarea tipo `auditor_review` automáticamente
+- [x] Endpoint: `POST /api/tasks/:id/auditor-decision` - Recibir decisión del auditor
+- [x] Implementar acciones: reassign, refine, escalate_human, retry
+- [x] Soporte para decisión manual por usuario (super auditor)
 
-**Archivos**: `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `api/src/routes/tasks.ts`
+**Archivos**: `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `api/src/routes/tasks.ts` ✅ Done
+
+#### 7.4 Frontend - Visualización ✅
+- [x] Badges de reintentos clickeables en tarjetas de tareas
+- [x] Badge "🔍 Auditoría pendiente" parpadeante
+- [x] Badge "🎭 En auditoría" cuando está bajo revisión
+- [x] Modal de historial de reintentos con timeline completo
+- [x] Modal de decisión manual de auditoría
+- [x] Visualización de mensajes de error en tarjetas
+
+**Archivos**: `data/frontend/src/views/TasksView.vue` ✅ Done
+
+#### 7.5 Pruebas End-to-End ✅
+- [x] Test suite en `api/src/tests/retry-audit.test.ts`
+- [x] Script de pruebas manuales `api/src/scripts/test-retry-flow.cjs`
+- [x] Script de bash `scripts/test-retry-audit.sh`
+- [x] Documentación completa en `doc/RETRY_AUDIT_TESTS.md`
+
+**Archivos**: `api/src/tests/retry-audit.test.ts`, `api/src/scripts/test-retry-flow.cjs`, `scripts/test-retry-audit.sh`, `doc/RETRY_AUDIT_TESTS.md` ✅ Done
 
 ---
 
