@@ -6,6 +6,7 @@ import { EventEmitter } from 'events'
  */
 class TaskEventsService extends EventEmitter {
   private clients: Set<any> = new Set()
+  private taskSubscriptions: Map<string, Set<(event: any) => void>> = new Map()
 
   constructor() {
     super()
@@ -135,6 +136,45 @@ class TaskEventsService extends EventEmitter {
    */
   getClientCount(): number {
     return this.clients.size
+  }
+
+  /**
+   * Suscribir a eventos de una tarea específica
+   * Returns unsubscribe function
+   */
+  subscribe(taskId: string, callback: (event: any) => void): () => void {
+    if (!this.taskSubscriptions.has(taskId)) {
+      this.taskSubscriptions.set(taskId, new Set())
+    }
+
+    this.taskSubscriptions.get(taskId)!.add(callback)
+
+    // Return unsubscribe function
+    return () => {
+      const subscribers = this.taskSubscriptions.get(taskId)
+      if (subscribers) {
+        subscribers.delete(callback)
+        if (subscribers.size === 0) {
+          this.taskSubscriptions.delete(taskId)
+        }
+      }
+    }
+  }
+
+  /**
+   * Emitir evento a todos los suscriptores de una tarea específica
+   */
+  emit(taskId: string, event: any): void {
+    const subscribers = this.taskSubscriptions.get(taskId)
+    if (subscribers) {
+      subscribers.forEach(callback => {
+        try {
+          callback(event)
+        } catch (error) {
+          console.error('Error in task event callback:', error)
+        }
+      })
+    }
   }
 }
 

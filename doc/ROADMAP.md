@@ -2,7 +2,7 @@
 
 Este documento describe las características planificadas y mejoras futuras del sistema HQ.
 
-## Estado Actual (2026-02-17)
+## Estado Actual (2026-02-18)
 
 ### ✅ Completado
 
@@ -11,7 +11,6 @@ Este documento describe las características planificadas y mejoras futuras del 
 - **Squad Lead Orchestration** - Orquestación automática de misiones
 - **Human Input Flow** - Solicitudes de información del Squad Lead al usuario
 - **Activity View** - Visualización isométrica de agentes en zonas
-- **Mission Creation UI** - Formulario básico de misiones
 - **Task Management** - Kanban de tareas con filtros por misión
 - **Agent Metrics Dashboard** - Métricas básicas de agentes
 - **Phase 6** ✅ - Archivos y Entregables COMPLETO
@@ -24,128 +23,40 @@ Este documento describe las características planificadas y mejoras futuras del 
   - 7.3: Flujo de Auditoría (creación automática de tareas de auditoría)
   - 7.4: Frontend - Visualización (badges clickeables, modal de historial)
   - 7.5: Pruebas End-to-End (test suite completo)
+- **Phase 10.1** ✅ - Creación Optimizada de Misiones COMPLETO
+  - Selector de tipo de misión (AUTO_ORCHESTRATED, TEMPLATE_BASED, MANUAL)
+  - Campos de contexto adicionales (context, audience, deliverableFormat, successCriteria, constraints, tone)
+  - Modal con scroll interno para pantallas pequeñas
+  - Vista previa del plan antes de ejecutar
+  - Info contextual para cada tipo
+- **Phase 8.1** ✅ - Streaming de Outputs COMPLETO
+  - Endpoint SSE para streaming en tiempo real del output de tareas
+  - Simulación de streaming con chunks de 200 caracteres
+  - Componente TaskOutputStream con indicador Live 🔴
+  - Botón "📡 Ver Output Live" en tarjetas de tareas
 
 ---
 
 ## Roadmap - Próximas Fases
 
-### 🔥 Phase 6: Archivos y Entregables (PRIORIDAD ALTA)
-
-**Objetivo**: Permitir que las misiones generen entregables tangibles (PDF, código, datos) con soporte para uploads de archivos.
-
-#### 6.1 Estructura de Archivos y Volumen Docker ✅
-- [x] Crear volumen Docker `/data/hq-files` para persistencia de archivos
-- [x] Implementar estructura de carpetas:
-  ```
-  /data/hq-files/
-  ├── missions/
-  │   ├── {mission_id}/
-  │   │   ├── metadata.json
-  │   │   ├── inputs/           # Archivos subidos por usuario
-  │   │   ├── tasks/
-  │   │   │   └── {task_id}/
-  │   │   │       ├── input.json
-  │   │   │       ├── output.json
-  │   │   │       ├── artifacts/
-  │   │   │       └── logs/
-  │   │   └── outputs/          # Entregables finales
-  ```
-- [x] Crear servicio `file-management.service.ts`
-- [x] Montar volumen en contenedores de agentes (read-only inputs, write tasks)
-
-**Archivos**: `api/src/services/file-management.service.ts`, `docker-compose.yml` ✅ Done
-
-#### 6.2 Modelo Resource/Attachment ✅
-- [x] Crear modelo `Resource.ts` para archivos adjuntos
-- [x] Crear modelo `Attachment.ts` para vincular recursos a misiones/tareas
-- [x] Endpoint: `POST /api/attachments/upload` - Subir archivo
-- [x] Endpoint: `GET /api/attachments/mission/:id` - Listar adjuntos
-- [x] Endpoint: `GET /api/attachments/:id/download` - Descargar archivo
-- [x] Endpoint: `DELETE /api/attachments/:id` - Eliminar archivo
-- [x] Soporte para: PDF, Markdown, Code (.ts, .js, .py), Excel (.xlsx), CSV, JSON
-
-**Archivos**: `api/src/models/Resource.ts`, `api/src/models/Attachment.ts`, `api/src/routes/resources.ts`, `api/src/routes/attachments.ts` ✅ Done
-
-#### 6.3 Frontend - Upload de Archivos ✅
-- [x] Componente `FileUploader.vue` para drag & drop
-- [x] Vista previa de archivos (PDF, imágenes, code snippets)
-- [x] Indicador de progreso de subida
-- [x] Lista de adjuntos en la vista de misión
-- [x] Botón "📎 Archivos" en tarjetas de misión
-
-**Archivos**: `data/frontend/src/components/FileUploader.vue`, `data/frontend/src/views/MissionsView.vue`, `data/frontend/src/services/api.ts` ✅ Done
-
----
-
-### ✅ Phase 7: Sistema de Reintentos y Auditor Agent (COMPLETADO)
-
-**Objetivo**: Manejo robusto de fallos con reintentos automáticos y un agente auditor inteligente.
-
-#### 7.1 Modelo de Reintentos ✅
-- [x] Agregar campos a `Task.ts`:
-  - `retryCount: number` - Número de intentos actuales
-  - `maxRetries: number` - Máximo de reintentos (default: 3)
-  - `retryHistory: Array<{attempt: number, error: string, timestamp: Date}>`
-  - `auditorReviewId: string` - ID de tarea de auditoría
-- [x] Métodos: `needsRetry()`, `recordRetry()`, `requestAudit()`
-- [x] Modificar polling del agente para implementar lógica de reintentos
-- [x] Endpoint: `POST /api/tasks/:id/retry` - Reintentar tarea manualmente
-
-**Archivos**: `api/src/models/Task.ts`, `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `api/src/routes/tasks.ts` ✅ Done
-
-#### 7.2 Agente Auditor ✅
-- [x] Crear template `auditor` en `agent-templates.ts`
-- [x] Capabilities: `error_analysis`, `task_refinement`, `agent_reassignment`, `human_escalation`, `root_cause_analysis`
-- [x] System prompt optimizado para análisis de fallos
-- [x] Lógica de decisión:
-  - AGENTE_INADECUADO → REASSIGN (reasignar a diferente agente)
-  - TAREA_MAL_DEFINIDA → REFINE (refinar descripción)
-  - INPUT_FALTANTE → ESCALATE_HUMAN (crear tarea human_input)
-  - DEPENDENCIA_ROTA → RECREATE (recrear tarea previa)
-  - ERROR_TECNICO → RETRY (reintentar con +1 maxRetries)
-
-**Archivos**: `api/src/config/agent-templates.ts` ✅ Done
-
-#### 7.3 Flujo de Auditoría ✅
-- [x] Modificar `hq-polling-skill.cjs` para crear tarea de auditoría después de 3 fallos
-- [x] Crear tarea tipo `auditor_review` automáticamente
-- [x] Endpoint: `POST /api/tasks/:id/auditor-decision` - Recibir decisión del auditor
-- [x] Implementar acciones: reassign, refine, escalate_human, retry
-- [x] Soporte para decisión manual por usuario (super auditor)
-
-**Archivos**: `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `api/src/routes/tasks.ts` ✅ Done
-
-#### 7.4 Frontend - Visualización ✅
-- [x] Badges de reintentos clickeables en tarjetas de tareas
-- [x] Badge "🔍 Auditoría pendiente" parpadeante
-- [x] Badge "🎭 En auditoría" cuando está bajo revisión
-- [x] Modal de historial de reintentos con timeline completo
-- [x] Modal de decisión manual de auditoría
-- [x] Visualización de mensajes de error en tarjetas
-
-**Archivos**: `data/frontend/src/views/TasksView.vue` ✅ Done
-
-#### 7.5 Pruebas End-to-End ✅
-- [x] Test suite en `api/src/tests/retry-audit.test.ts`
-- [x] Script de pruebas manuales `api/src/scripts/test-retry-flow.cjs`
-- [x] Script de bash `scripts/test-retry-audit.sh`
-- [x] Documentación completa en `doc/RETRY_AUDIT_TESTS.md`
-
-**Archivos**: `api/src/tests/retry-audit.test.ts`, `api/src/scripts/test-retry-flow.cjs`, `scripts/test-retry-audit.sh`, `doc/RETRY_AUDIT_TESTS.md` ✅ Done
-
----
-
-### ⚡ Phase 8: Outputs en Tiempo Real (PRIORIDAD MEDIA)
+### 📋 Phase 8: Outputs en Tiempo Real (PRIORIDAD MEDIA)
 
 **Objetivo**: Permitir al usuario ver outputs parciales mientras los agentes trabajan.
 
-#### 8.1 Streaming de Outputs
-- [ ] Endpoint SSE: `GET /api/tasks/:id/stream` - Output en tiempo real
-- [ ] Agregar campo `partialOutput` a `Task.ts`
-- [ ] Modificar `hq-polling-skill.cjs` para enviar chunks durante ejecución
-- [ ] Frontend: Componente `TaskOutputStream.vue` con actualización en vivo
+#### 8.1 Streaming de Outputs ✅
+- [x] Endpoint SSE: `GET /api/tasks/:id/stream` - Output en tiempo real
+- [x] Agregar campo `partialOutput` a `Task.ts`
+- [x] Modificar `hq-polling-skill.cjs` para enviar chunks durante ejecución
+- [x] Frontend: Componente `TaskOutputStream.vue` con actualización en vivo
 
-**Archivos**: `api/src/routes/tasks.ts`, `api/src/models/Task.ts`, `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `data/frontend/src/components/TaskOutputStream.vue`
+**Archivos**: `api/src/routes/tasks.ts`, `api/src/models/Task.ts`, `docker/hq-agent-openclaw/hq-polling-skill.cjs`, `data/frontend/src/components/TaskOutputStream.vue`, `api/src/services/task-events.service.ts` ✅ Done
+
+**Cambios Implementados**:
+- Endpoint SSE para streaming en tiempo real del output de tareas
+- Simulación de streaming: Agente envía output en chunks de 200 caracteres
+- Componente frontend con indicador Live 🔴 y cursor parpadeante
+- Botón "📡 Ver Output Live" en tarjetas de tareas in_progress/completed
+- Modal con panel de output stream en tiempo real
 
 #### 8.2 Consolidación de Outputs
 - [ ] Servicio para consolidar outputs de múltiples tareas
@@ -190,16 +101,23 @@ Este documento describe las características planificadas y mejoras futuras del 
 
 **Objetivo**: Hacer más intuitiva la creación y gestión de misiones.
 
-#### 10.1 Creación Optimizada de Misiones
-- [ ] Selector de tipo de misión:
+#### 10.1 Creación Optimizada de Misiones ✅
+- [x] Selector de tipo de misión:
   - `AUTO_ORCHESTRATED` - Squad Lead decide todo
   - `TEMPLATE_BASED` - Usa plantilla predefinida
   - `MANUAL` - Usuario define tareas
-- [ ] Orquestación automática al crear (con opción de editar)
-- [ ] Vista previa del plan antes de lanzar
-- [ ] Botón "Editar Plan" antes de ejecutar
+- [x] Orquestación automática al crear (con opción de editar)
+- [x] Vista previa del plan antes de lanzar
+- [x] Botón "Editar Plan" antes de ejecutar
 
-**Archivos**: `data/frontend/src/views/MissionsView.vue`
+**Archivos**: `data/frontend/src/views/MissionsView.vue`, `api/src/models/Mission.ts` ✅ Done
+
+**Cambios Implementados**:
+- Nuevo campo `missionType` en Mission model (AUTO_ORCHESTRATED, TEMPLATE_BASED, MANUAL)
+- UI con selector visual de 3 tipos de misión con iconos
+- Modal de vista previa del plan del Squad Lead
+- Botones: Confirmar, Editar, Rechazar plan
+- Info contextual para cada tipo de misión
 
 #### 10.2 Plantillas de Misiones
 - [ ] Modelo `MissionTemplate.ts` con plantillas predefinidas:
@@ -264,17 +182,17 @@ Este documento describe las características planificadas y mejoras futuras del 
 
 ## Orden de Implementación Sugerido
 
-1. **Phase 6.1** - Estructura de archivos (fundamento para todo lo demás)
-2. **Phase 6.2** - Modelo Resource/Attachment
-3. **Phase 7.1** - Modelo de reintentos (simple,blocking)
-4. **Phase 7.2** - Agente Auditor template
-5. **Phase 7.3** - Flujo de auditoría completo
-6. **Phase 6.3** - Frontend upload de archivos
-7. **Phase 8.1** - Streaming de outputs
-8. **Phase 8.2** - Consolidación de outputs/PDF
-9. **Phase 9.1** - Sistema de scoring
-10. **Phase 9.2** - Métricas de agentes
-11. **Phase 10.1** - Creación optimizada de misiones
+1. ✅ **Phase 6.1** - Estructura de archivos (fundamento para todo lo demás) - COMPLETADO
+2. ✅ **Phase 6.2** - Modelo Resource/Attachment - COMPLETADO
+3. ✅ **Phase 7.1** - Modelo de reintentos (simple,blocking) - COMPLETADO
+4. ✅ **Phase 7.2** - Agente Auditor template - COMPLETADO
+5. ✅ **Phase 7.3** - Flujo de auditoría completo - COMPLETADO
+6. ✅ **Phase 6.3** - Frontend upload de archivos - COMPLETADO
+7. ✅ **Phase 10.1** - Creación optimizada de misiones - COMPLETADO
+8. **Phase 8.1** - Streaming de outputs
+9. **Phase 8.2** - Consolidación de outputs/PDF
+10. **Phase 9.1** - Sistema de scoring
+11. **Phase 9.2** - Métricas de agentes
 12. **Phase 10.2** - Plantillas de misiones
 13. **Phase 11** - Telegram integration
 14. **Phase 12** - Features avanzadas
@@ -300,4 +218,4 @@ Este documento describe las características planificadas y mejoras futuras del 
 
 ---
 
-**Última actualización**: 2026-02-17
+**Última actualización**: 2026-02-18

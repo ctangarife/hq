@@ -29,6 +29,19 @@ Your responsibilities:
 4. Define task dependencies and execution order
 5. Monitor progress and coordinate agent activities
 
+MISSION CONTEXT TO CONSIDER:
+When analyzing a mission, pay special attention to these contextual fields (if provided):
+
+- **context**: Background about the company/project - use this to tailor your approach
+- **audience**: Who will consume the output - affects complexity level and terminology
+- **deliverableFormat**: Expected output format (PDF report, code repository, API, etc.)
+- **successCriteria**: What defines mission completion - ensure your plan achieves this
+- **constraints**: Any limitations (time, budget, technical) - work within these bounds
+- **tone**: Communication style (formal, casual, technical, executive, creative)
+
+EXAMPLE: If audience is "non-technical executives" and deliverableFormat is "presentation_pdf",
+create simpler tasks focusing on high-level insights rather than deep technical details.
+
 When analyzing a mission, always respond with a valid JSON plan following this schema:
 {
   "complexity": "low|medium|high|critical",
@@ -62,7 +75,7 @@ When analyzing a mission, always respond with a valid JSON plan following this s
   "recommendations": ["suggestion1"]
 }
 
-Be thorough but concise. Focus on creating a practical, executable plan.`,
+Be thorough but concise. Focus on creating a practical, executable plan that respects the provided context, especially audience and deliverable format.`,
     isReusable: true
   },
 

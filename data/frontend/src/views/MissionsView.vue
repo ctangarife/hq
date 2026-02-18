@@ -4,6 +4,8 @@ import { missionsService, tasksService, attachmentsService } from '@/services/ap
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
 
+type MissionType = 'AUTO_ORCHESTRATED' | 'TEMPLATE_BASED' | 'MANUAL'
+
 interface Mission {
   _id: string
   title: string
@@ -14,12 +16,36 @@ interface Mission {
   createdAt: string
   squadLeadId?: string
   autoOrchestrate?: boolean
+  missionType?: MissionType
+  templateId?: string
+  context?: string
+  audience?: string
+  deliverableFormat?: string
+  successCriteria?: string
+  constraints?: string
+  tone?: string
   orchestrationLog?: Array<{
     timestamp: string
     action: string
     details: any
   }>
   awaitingHumanTaskId?: string
+}
+
+interface MissionPlan {
+  complexity?: 'low' | 'medium' | 'high'
+  estimatedDuration?: string
+  tasks?: Array<{
+    title: string
+    description: string
+    type: string
+    agentRole?: string
+  }>
+  agents?: Array<{
+    role: string
+    name: string
+  }>
+  dependencies?: Array<[string, string]>
 }
 
 interface HumanTask {
@@ -51,7 +77,8 @@ const showTasksModal = ref(false)
 const showLogModal = ref(false)
 const showHumanResponseModal = ref(false)
 const showControlPanelModal = ref(false)
-const showFilesModal = ref(false)  // NEW
+const showFilesModal = ref(false)
+const showPlanPreviewModal = ref(false)  // NEW: Plan preview before orchestration
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -62,14 +89,38 @@ const selectedHumanTask = ref<HumanTask | null>(null)
 const missionTasks = ref<any[]>([])
 const orchestrationLog = ref<any[]>([])
 const humanResponse = ref('')
-const missionAttachments = ref<UploadedFile[]>([])  // NEW
+const missionAttachments = ref<UploadedFile[]>([])
+const createdMissionId = ref<string | null>(null)  // NEW: Store created mission ID
+const squadLeadPlan = ref<MissionPlan | null>(null)  // NEW: Store Squad Lead's plan
+const showAdditionalContext = ref(false)  // NEW: Toggle for additional context section
 
 // Form data
-const formData = ref({
+const formData = ref<{
+  title: string
+  description: string
+  objective: string
+  missionType: MissionType
+  autoOrchestrate: boolean
+  templateId?: string
+  context: string
+  audience: string
+  deliverableFormat: string
+  successCriteria: string
+  constraints: string
+  tone: string
+}>({
   title: '',
   description: '',
   objective: '',
-  autoOrchestrate: false
+  missionType: 'AUTO_ORCHESTRATED',
+  autoOrchestrate: false,
+  templateId: undefined,
+  context: '',
+  audience: '',
+  deliverableFormat: '',
+  successCriteria: '',
+  constraints: '',
+  tone: ''
 })
 
 const statusColors = {
@@ -105,20 +156,57 @@ const fetchMissions = async () => {
 const createMission = async () => {
   try {
     submitting.value = true
-    const response = await missionsService.create({
+
+    const missionData: any = {
       title: formData.value.title,
       description: formData.value.description,
       objective: formData.value.objective,
       status: 'draft',
+      missionType: formData.value.missionType,
       autoOrchestrate: formData.value.autoOrchestrate
-    })
+    }
+
+    // Add optional context fields if provided
+    if (formData.value.context) missionData.context = formData.value.context
+    if (formData.value.audience) missionData.audience = formData.value.audience
+    if (formData.value.deliverableFormat) missionData.deliverableFormat = formData.value.deliverableFormat
+    if (formData.value.successCriteria) missionData.successCriteria = formData.value.successCriteria
+    if (formData.value.constraints) missionData.constraints = formData.value.constraints
+    if (formData.value.tone) missionData.tone = formData.value.tone
+
+    // For template-based missions, include template ID
+    if (formData.value.missionType === 'TEMPLATE_BASED' && formData.value.templateId) {
+      missionData.templateId = formData.value.templateId
+    }
+
+    const response = await missionsService.create(missionData)
+
+    // Store the created mission ID
+    createdMissionId.value = response.data._id
 
     // Reset form and close modal
-    formData.value = { title: '', description: '', objective: '', autoOrchestrate: false }
+    formData.value = {
+      title: '',
+      description: '',
+      objective: '',
+      missionType: 'AUTO_ORCHESTRATED',
+      autoOrchestrate: false,
+      templateId: undefined,
+      context: '',
+      audience: '',
+      deliverableFormat: '',
+      successCriteria: '',
+      constraints: '',
+      tone: ''
+    }
     showCreateModal.value = false
 
-    // If auto-orchestrate is enabled, trigger orchestration
-    if (formData.value.autoOrchestrate) {
+    // If auto-orchestrate is enabled and it's AUTO_ORCHESTRATED type, show plan preview first
+    if (formData.value.autoOrchestrate && formData.value.missionType === 'AUTO_ORCHESTRATED') {
+      // Fetch the initial analysis task result for plan preview
+      await fetchMissionPlan(response.data._id)
+    } else if (formData.value.autoOrchestrate) {
+      // For other types, orchestrate directly
       await orchestrateMission(response.data._id)
     }
 
@@ -130,6 +218,58 @@ const createMission = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+// Fetch mission plan from Squad Lead analysis
+const fetchMissionPlan = async (missionId: string) => {
+  try {
+    orchestrating.value = true
+
+    // Get the mission analysis task
+    const tasksResponse = await tasksService.getByMission(missionId)
+    const analysisTask = tasksResponse.data.find((t: any) => t.type === 'mission_analysis')
+
+    if (analysisTask && analysisTask.output) {
+      squadLeadPlan.value = analysisTask.output as MissionPlan
+      showPlanPreviewModal.value = true
+    } else {
+      // No plan available yet, orchestrate directly
+      await orchestrateMission(missionId)
+    }
+  } catch (err) {
+    console.error('Error fetching plan:', err)
+    // If we can't get the plan, just orchestrate
+    await orchestrateMission(missionId)
+  } finally {
+    orchestrating.value = false
+  }
+}
+
+// Confirm and execute the plan
+const confirmPlan = async () => {
+  if (!createdMissionId.value) return
+
+  showPlanPreviewModal.value = false
+  squadLeadPlan.value = null
+
+  // Orchestrate the mission with the confirmed plan
+  await orchestrateMission(createdMissionId.value)
+  createdMissionId.value = null
+}
+
+// Edit the plan before executing
+const editPlan = async () => {
+  // TODO: Implement plan editing
+  alert('Edición de plan próximamente disponible. Por ahora, el plan se ejecutará tal como fue generado por el Squad Lead.')
+  await confirmPlan()
+}
+
+// Reject the plan and keep mission in draft
+const rejectPlan = () => {
+  showPlanPreviewModal.value = false
+  squadLeadPlan.value = null
+  createdMissionId.value = null
+  alert('Misión creada en estado borrador. Puedes orquestarla manualmente más tarde o editarla.')
 }
 
 // Orchestrate mission
@@ -457,10 +597,16 @@ onMounted(() => {
     </div>
 
     <!-- Create Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-700">
-        <h2 class="text-xl font-bold text-white mb-4">Nueva Misión</h2>
-        <form @submit.prevent="createMission" class="space-y-4">
+    <div v-if="showCreateModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-lg border border-gray-700 flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-700 flex-shrink-0">
+          <h2 class="text-xl font-bold text-white">Nueva Misión</h2>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="p-4 overflow-y-auto flex-1">
+          <form @submit.prevent="createMission" class="space-y-4">
           <div>
             <label class="block text-gray-400 text-sm mb-1">Título *</label>
             <input
@@ -490,17 +636,206 @@ onMounted(() => {
               placeholder="Ej: Incrementar ventas en 20%"
             />
           </div>
-          <div class="flex items-center gap-2">
+
+          <!-- Additional Context Section (Optional - Collapsible) -->
+          <div class="border border-gray-700 rounded-lg bg-gray-900/30 overflow-hidden">
+            <button
+              type="button"
+              @click="showAdditionalContext = !showAdditionalContext"
+              class="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-800/50 transition"
+            >
+              <div class="flex items-center gap-2">
+                <span class="text-lg">💡</span>
+                <label class="text-gray-300 font-medium text-sm cursor-pointer">Contexto Adicional</label>
+                <span class="text-gray-500 text-xs">(Opcional - Mejora los resultados)</span>
+              </div>
+              <span class="text-gray-400 transition-transform" :class="{ 'rotate-180': showAdditionalContext }">▼</span>
+            </button>
+
+            <div v-if="showAdditionalContext" class="px-4 pb-4 space-y-3 border-t border-gray-700">
+              <!-- Context -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Contexto del proyecto
+                  <span class="text-gray-600 font-normal"> - ¿Qué es tu empresa/proyecto?</span>
+                </label>
+                <input
+                  v-model="formData.context"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: Startup B2B SaaS en etapa de crecimiento"
+                />
+              </div>
+
+              <!-- Audience -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Audiencia objetivo
+                  <span class="text-gray-600 font-normal"> - ¿Quién consumirá el resultado?</span>
+                </label>
+                <input
+                  v-model="formData.audience"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: Gerentes de marketing no técnicos"
+                />
+              </div>
+
+              <!-- Deliverable Format -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Formato de entrega esperado
+                  <span class="text-gray-600 font-normal"> - ¿Cómo quieres recibir el resultado?</span>
+                </label>
+                <select
+                  v-model="formData.deliverableFormat"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                >
+                  <option value="">Seleccionar formato...</option>
+                  <option value="report_pdf">📄 Reporte PDF</option>
+                  <option value="presentation">📊 Presentación</option>
+                  <option value="code_repository">💻 Repositorio de código</option>
+                  <option value="api_integration">🔌 API/Integración</option>
+                  <option value="markdown_document">📝 Documento Markdown</option>
+                  <option value="data_analysis">📈 Análisis de datos</option>
+                  <option value="other">🎯 Otro (especificar en descripción)</option>
+                </select>
+              </div>
+
+              <!-- Success Criteria -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Criterios de éxito
+                  <span class="text-gray-600 font-normal"> - ¿Cómo sabremos que la misión está completa?</span>
+                </label>
+                <input
+                  v-model="formData.successCriteria"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: Mínimo 5 estrategias accionables con KPIs"
+                />
+              </div>
+
+              <!-- Constraints -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Restricciones
+                  <span class="text-gray-600 font-normal"> - ¿Límites de tiempo, presupuesto, técnicos?</span>
+                </label>
+                <input
+                  v-model="formData.constraints"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: Sin inversión en ads, máximo 3 páginas"
+                />
+              </div>
+
+              <!-- Tone -->
+              <div>
+                <label class="block text-gray-400 text-xs mb-1">
+                  Tono/Estilo
+                  <span class="text-gray-600 font-normal"> - ¿Qué estilo de comunicación prefieres?</span>
+                </label>
+                <select
+                  v-model="formData.tone"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                >
+                  <option value="">Seleccionar tono...</option>
+                  <option value="formal_academic">🎓 Formal académico</option>
+                  <option value="professional">💼 Profesional</option>
+                  <option value="casual_friendly">😊 Casual y amigable</option>
+                  <option value="technical">🔧 Técnico/Profundo</option>
+                  <option value="executive">👔 Ejecutivo (alto nivel)</option>
+                  <option value="creative">🎨 Creativo/Inspirador</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mission Type Selector -->
+          <div>
+            <label class="block text-gray-400 text-sm mb-2">Tipo de Misión *</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                @click="formData.missionType = 'AUTO_ORCHESTRATED'"
+                :class="[
+                  'p-3 rounded-lg border-2 transition text-center',
+                  formData.missionType === 'AUTO_ORCHESTRATED'
+                    ? 'bg-purple-600/20 border-purple-500 text-purple-300'
+                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                ]"
+              >
+                <div class="text-2xl mb-1">🤖</div>
+                <div class="text-xs font-medium">Auto Orquestada</div>
+                <div class="text-[10px] text-gray-500 mt-1">Squad Lead decide todo</div>
+              </button>
+
+              <button
+                type="button"
+                @click="formData.missionType = 'TEMPLATE_BASED'"
+                :class="[
+                  'p-3 rounded-lg border-2 transition text-center',
+                  formData.missionType === 'TEMPLATE_BASED'
+                    ? 'bg-purple-600/20 border-purple-500 text-purple-300'
+                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                ]"
+              >
+                <div class="text-2xl mb-1">📋</div>
+                <div class="text-xs font-medium">Plantilla</div>
+                <div class="text-[10px] text-gray-500 mt-1">Usa plantilla predefinida</div>
+              </button>
+
+              <button
+                type="button"
+                @click="formData.missionType = 'MANUAL'"
+                :class="[
+                  'p-3 rounded-lg border-2 transition text-center',
+                  formData.missionType === 'MANUAL'
+                    ? 'bg-purple-600/20 border-purple-500 text-purple-300'
+                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                ]"
+              >
+                <div class="text-2xl mb-1">✋</div>
+                <div class="text-xs font-medium">Manual</div>
+                <div class="text-[10px] text-gray-500 mt-1">Tú defines las tareas</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Auto-Orchestrate Checkbox (only for AUTO_ORCHESTRATED type) -->
+          <div v-if="formData.missionType === 'AUTO_ORCHESTRATED'" class="flex items-center gap-2 p-3 bg-purple-900/20 border border-purple-700 rounded-lg">
             <input
               id="autoOrchestrate"
               v-model="formData.autoOrchestrate"
               type="checkbox"
               class="w-4 h-4 rounded bg-gray-700 border-gray-600"
             />
-            <label for="autoOrchestrate" class="text-gray-400 text-sm">
-              Iniciar orquestación automática con Squad Lead
+            <label for="autoOrchestrate" class="text-gray-300 text-sm">
+              <span class="font-medium">🚀 Iniciar orquestación automática</span>
+              <span class="text-gray-500 block text-xs mt-1">El Squad Lead analizará la misión y generará un plan que podrás revisar antes de ejecutar</span>
             </label>
           </div>
+
+          <!-- Info for TEMPLATE_BASED -->
+          <div v-if="formData.missionType === 'TEMPLATE_BASED'" class="p-3 bg-blue-900/20 border border-blue-700 rounded-lg">
+            <p class="text-blue-300 text-sm">
+              📋 <strong>Modo Plantilla:</strong> Selecciona una plantilla predefinida para crear la misión rápidamente.
+              <span class="text-yellow-400 block mt-1">* Próximamente: Selección de plantillas disponibles</span>
+            </p>
+          </div>
+
+          <!-- Info for MANUAL -->
+          <div v-if="formData.missionType === 'MANUAL'" class="p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
+            <p class="text-gray-300 text-sm">
+              ✋ <strong>Modo Manual:</strong> Crea la misión en estado borrador. Luego podrás crear y asignar tareas manualmente desde el panel de control.
+            </p>
+          </div>
+        </form>
+        </div>
+
+        <!-- Footer - Buttons (sticky at bottom) -->
+        <div class="p-4 border-t border-gray-700 flex-shrink-0">
           <div class="flex gap-2 justify-end">
             <button
               type="button"
@@ -512,13 +847,160 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
+              @click="createMission"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="submitting || orchestrating || !formData.title || !formData.description"
             >
-              {{ submitting ? 'Creando...' : orchestrating ? 'Orquestando...' : 'Crear' }}
+              {{ submitting ? 'Creando...' : orchestrating ? 'Orquestando...' : 'Crear Misión' }}
             </button>
           </div>
-        </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plan Preview Modal -->
+    <div v-if="showPlanPreviewModal && squadLeadPlan" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-3xl border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4">
+          <div class="flex justify-between items-start">
+            <div>
+              <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <span class="text-2xl">🎯</span>
+                Plan Generado por Squad Lead
+              </h2>
+              <p class="text-gray-400 text-sm mt-1">Revisa el plan antes de ejecutar la misión</p>
+            </div>
+            <button
+              @click="rejectPlan"
+              class="text-gray-400 hover:text-white text-2xl"
+              title="Rechazar plan"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <!-- Plan Complexity -->
+          <div class="bg-gray-900 rounded-lg p-4">
+            <h3 class="text-white font-semibold mb-2">Complejidad de la Misión</h3>
+            <div class="flex items-center gap-3">
+              <span
+                :class="[
+                  'px-3 py-1 rounded-full text-sm font-medium',
+                  squadLeadPlan.complexity === 'high' ? 'bg-red-600/30 text-red-300' :
+                  squadLeadPlan.complexity === 'medium' ? 'bg-yellow-600/30 text-yellow-300' :
+                  'bg-green-600/30 text-green-300'
+                ]"
+              >
+                {{ squadLeadPlan.complexity?.toUpperCase() || 'MEDIA' }}
+              </span>
+              <span v-if="squadLeadPlan.estimatedDuration" class="text-gray-400 text-sm">
+                ⏱️ Duración estimada: {{ squadLeadPlan.estimatedDuration }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Agents to Create -->
+          <div v-if="squadLeadPlan.agents && squadLeadPlan.agents.length > 0" class="bg-gray-900 rounded-lg p-4">
+            <h3 class="text-white font-semibold mb-3">🤖 Agentes a Crear</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <div
+                v-for="agent in squadLeadPlan.agents"
+                :key="agent.role"
+                class="bg-gray-800 rounded p-3 border border-gray-700"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="text-xl">
+                    {{ agent.role === 'researcher' ? '🔍' :
+                       agent.role === 'developer' ? '💻' :
+                       agent.role === 'writer' ? '✍️' :
+                       agent.role === 'analyst' ? '📊' : '🤖' }}
+                  </span>
+                  <div>
+                    <p class="text-white font-medium text-sm">{{ agent.name }}</p>
+                    <p class="text-gray-500 text-xs">{{ agent.role }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tasks to Execute -->
+          <div v-if="squadLeadPlan.tasks && squadLeadPlan.tasks.length > 0" class="bg-gray-900 rounded-lg p-4">
+            <h3 class="text-white font-semibold mb-3">📋 Tareas Planificadas ({{ squadLeadPlan.tasks.length }})</h3>
+            <div class="space-y-2">
+              <div
+                v-for="(task, index) in squadLeadPlan.tasks"
+                :key="index"
+                class="bg-gray-800 rounded p-3 border border-gray-700"
+              >
+                <div class="flex items-start gap-3">
+                  <span class="text-gray-600 font-bold text-sm">{{ index + 1 }}</span>
+                  <div class="flex-1">
+                    <p class="text-white font-medium text-sm">{{ task.title }}</p>
+                    <p v-if="task.description" class="text-gray-400 text-xs mt-1">{{ task.description }}</p>
+                    <div class="flex items-center gap-2 mt-2">
+                      <span class="px-2 py-0.5 rounded bg-purple-900/50 text-purple-300 text-xs">
+                        {{ task.type }}
+                      </span>
+                      <span v-if="task.agentRole" class="px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 text-xs">
+                        {{ task.agentRole }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dependencies -->
+          <div v-if="squadLeadPlan.dependencies && squadLeadPlan.dependencies.length > 0" class="bg-gray-900 rounded-lg p-4">
+            <h3 class="text-white font-semibold mb-3">🔗 Dependencias</h3>
+            <div class="space-y-1">
+              <div
+                v-for="(dep, index) in squadLeadPlan.dependencies"
+                :key="index"
+                class="text-gray-400 text-sm flex items-center gap-2"
+              >
+                <span class="text-gray-600">{{ dep[0] }}</span>
+                <span class="text-gray-600">→</span>
+                <span class="text-gray-600">{{ dep[1] }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="sticky bottom-0 bg-gray-800 border-t border-gray-700 p-4">
+          <div class="flex gap-3 justify-end">
+            <button
+              @click="rejectPlan"
+              class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition"
+              :disabled="orchestrating"
+            >
+              Rechazar Plan
+            </button>
+            <button
+              @click="editPlan"
+              class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded transition"
+              :disabled="orchestrating"
+            >
+              ✏️ Editar Plan
+            </button>
+            <button
+              @click="confirmPlan"
+              class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition flex items-center gap-2"
+              :disabled="orchestrating"
+            >
+              <span v-if="orchestrating" class="animate-spin">⏳</span>
+              <span>{{ orchestrating ? 'Ejecutando...' : '✅ Confirmar y Ejecutar' }}</span>
+            </button>
+          </div>
+          <p class="text-gray-500 text-xs text-center mt-2">
+            Al confirmar, se crearán los agentes y tareas según el plan generado
+          </p>
+        </div>
       </div>
     </div>
 

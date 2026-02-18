@@ -203,9 +203,88 @@ Para más detalles, ver:
 | developer | developer | code_execution, code_review, debugging | glm-4 |
 | writer | writer | content_generation, editing, documentation | glm-4 |
 | analyst | analyst | data_analysis, statistics, reporting | glm-4 |
+| auditor | auditor | error_analysis, task_refinement, agent_reassignment | glm-4-plus |
 
 <img width="1856" height="887" alt="image" src="https://github.com/user-attachments/assets/3fcffe1b-82d5-4bd1-8e13-edba28a6004e" />
 
+
+### Tipos de Misiones
+
+HQ ahora soporta tres tipos de misiones para diferentes flujos de trabajo:
+
+| Tipo | Descripción | Cuándo Usar |
+|------|-------------|-------------|
+| 🤖 **Auto Orquestada** | Squad Lead analiza, planifica y ejecuta automáticamente | La mayoría de las misiones complejas |
+| 📋 **Basada en Plantilla** | Usa plantillas predefinidas para misiones comunes | Misiones repetitivas (próximamente) |
+| ✋ **Manual** | Creas las tareas y asignaciones manualmente | Casos muy específicos |
+
+#### Flujo de Misión Auto Orquestada (Mejorado)
+
+```
+1. Crear misión → Seleccionar "Auto Orquestada"
+2. Marcar "Iniciar orquestación automática"
+3. Squad Lead analiza la misión
+4. 🎯 Vista previa del plan:
+   - Ver agentes que se crearán
+   - Ver tareas planificadas
+   - Ver dependencias
+5. Decidir:
+   - ✅ Confirmar y ejecutar
+   - ✏️ Editar plan (próximamente)
+   - ❌ Rechazar (quedará en borrador)
+6. Ejecución automática
+```
+
+### 📋 Campos de Contexto de Misión (Mejoras en Planificación)
+
+Además de los campos básicos, HQ ahora soporta **campos opcionales de contexto** que ayudan al Squad Lead a generar mejores planes:
+
+| Campo | Descripción | Ejemplo |
+|-------|-------------|---------|
+| **Contexto** | Background sobre la empresa/proyecto | "Startup B2B SaaS en etapa de crecimiento" |
+| **Audiencia** | Quién consumirá el resultado | "Gerentes de marketing no técnicos" |
+| **Formato de Entrega** | Cómo se espera recibir el resultado | "Reporte PDF con gráficos" |
+| **Criterios de Éxito** | Qué define que la misión está completa | "Mínimo 5 estrategias accionables con KPIs" |
+| **Restricciones** | Límites de tiempo, presupuesto, técnicos | "Sin inversión en ads, máximo 3 páginas" |
+| **Tono** | Estilo de comunicación preferido | "Profesional pero accesible" |
+
+**¿Por qué usar estos campos?**
+- ✅ **Menos reintentos** - El Squad Lead pide menos información en el flujo de human input
+- ✅ **Planes más precisos** - Las tareas están mejor definidas desde el inicio
+- ✅ **Resultados mejor alineados** - El output coincide con tus expectativas
+
+### 📡 Streaming de Outputs en Tiempo Real
+
+**¿Qué es?**: Puedes ver el output de las tareas mientras el agente está generándolas, sin esperar a que termine.
+
+**Cómo funciona**:
+1. Durante la ejecución de una tarea, el agente envía "chunks" del output
+2. El frontend los muestra en tiempo real con un indicador "🔴 Live"
+3. Cuando la tarea completa, ves el resultado final
+
+**Cómo usarlo**:
+```
+1. En la vista de Tareas, busca una tarea en estado "in_progress"
+2. Haz clic en el botón "📡 Ver Output Live"
+3. Se abre un modal mostrando el output en tiempo real
+4. El cursor parpadeante indica que está recibiendo datos
+```
+
+**Endpoints**:
+```bash
+# Stream task output (SSE)
+curl http://localhost:3001/api/tasks/{taskId}/stream \
+  -H "Authorization: Bearer hq-agent-token"
+
+# Update partial output (llamado por el agente)
+# POST /api/tasks/:id/partial-output
+```
+
+**Características**:
+- 🔴 Indicador "Live" cuando está conectado
+- ✅ Cursor parpadeante mostrando actividad
+- 📜 Auto-scroll al contenido más reciente
+- 🎯 Funciona para tareas en progreso y completadas
 
 ### API de Orquestación
 
@@ -726,7 +805,8 @@ curl -X POST http://localhost:3001/api/agents \
 - [x] Phase 5: Dashboard UI
 - [x] Phase 6: Archivos y Entregables
 - [x] Phase 7: Sistema de Reintentos y Auditor Agent
-- [ ] Phase 8: Outputs en Tiempo Real
+- [x] Phase 8.1: Streaming de Outputs
+- [ ] Phase 8.2: Consolidación de Outputs (PDF)
 - [ ] Phase 9: Optimización de Asignación de Agentes
 - [ ] Phase 10: Mejoras de UX
 - [ ] Phase 11: Telegram Integration
@@ -744,6 +824,7 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 - ✅ Human Input Flow - Squad Lead puede solicitar información al usuario
 - ✅ Isometric Activity View - Vista visual de agentes en zonas (Work Control, Work Area, Lounge)
 - ✅ SSE Activity Stream - Stream de eventos en tiempo real
+- ✅ **Task Output Streaming** - Ver outputs de tareas en tiempo real mientras se generan
 - ✅ **File Management** - Subida y adjuntación de archivos a misiones
 - ✅ **Retry & Auditor System** - Reintentos automáticos y agente auditor inteligente
 
@@ -761,10 +842,10 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 ### Agentes Deployados
 - **Cabezón** (Squad Lead) - Z.ai glm-4-plus - Listo para orquestar misiones
 
-### Próximos Pasos (Phase 8)
-1. **Streaming de Outputs** - Ver outputs parciales mientras agentes trabajan
-2. **Consolidación de Outputs** - Generar PDFs con resultados finales
-3. **Sistema de Scoring** - Asignación inteligente de agentes a tareas
+### Próximos Pasos (Phase 8.2)
+1. **Consolidación de Outputs** - Generar PDFs con resultados finales
+2. **Sistema de Scoring** - Asignación inteligente de agentes a tareas
+3. **Métricas de Agentes** - Historial de rendimiento y éxito
 
 ## Troubleshooting
 

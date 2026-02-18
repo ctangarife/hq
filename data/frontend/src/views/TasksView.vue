@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { tasksService, missionsService, agentsService } from '@/services/api'
+import TaskOutputStream from '@/components/TaskOutputStream.vue'
 
 interface RetryAttempt {
   attempt: number
@@ -49,6 +50,11 @@ const selectedTaskForAudit = ref<Task | null>(null)  // NEW: Tarea seleccionada 
 const manualAuditDecision = ref('')  // NEW: Decisión seleccionada
 const manualAuditReason = ref('')  // NEW: Razón de la decisión
 const manualAuditSubmitting = ref(false)  // NEW: Estado de envío de auditoría manual
+
+// Phase 8: Streaming output
+const streamingTaskId = ref<string | null>(null)  // Tarea cuyo output se está mostrando en tiempo real
+const showOutputStream = ref(false)  // Mostrar/ocultar el panel de output stream
+const authToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') || 'hq-agent-token' : 'hq-agent-token'
 
 // SSE connection
 let taskEventSource: EventSource | null = null
@@ -318,6 +324,38 @@ const submitManualAuditDecision = async () => {
   } finally {
     manualAuditSubmitting.value = false
   }
+}
+
+// Phase 8: Streaming output functions
+// Toggle output stream for a task
+const toggleOutputStream = (task: Task) => {
+  if (streamingTaskId.value === task._id) {
+    // Close if already open
+    streamingTaskId.value = null
+    showOutputStream.value = false
+  } else {
+    // Open for this task
+    streamingTaskId.value = task._id
+    showOutputStream.value = true
+  }
+}
+
+// Close output stream
+const closeOutputStream = () => {
+  streamingTaskId.value = null
+  showOutputStream.value = false
+}
+
+// Handle stream completion
+const handleStreamComplete = (output: any) => {
+  console.log('Stream complete:', output)
+  // Optionally refresh tasks to show updated state
+  fetchTasks()
+}
+
+// Handle stream error
+const handleStreamError = (error: string) => {
+  console.error('Stream error:', error)
 }
 
 // Update task (full edit)
@@ -634,6 +672,22 @@ onUnmounted(() => {
                 🎭 En auditoría
               </span>
             </div>
+
+            <!-- Phase 8: Output Stream Button - For in_progress tasks -->
+            <button
+              v-if="task.status === 'in_progress' || task.status === 'completed'"
+              @click.stop="toggleOutputStream(task)"
+              :class="[
+                'mt-2 w-full text-xs px-2 py-1.5 rounded flex items-center justify-center gap-1 transition',
+                streamingTaskId === task._id
+                  ? 'bg-green-600/50 text-green-300 border border-green-500'
+                  : 'bg-gray-600/50 text-gray-300 border border-gray-600 hover:bg-gray-600/30'
+              ]"
+              title="Ver output en tiempo real"
+            >
+              <span v-if="task.status === 'in_progress'">📡 Ver Output Live</span>
+              <span v-else>📄 Ver Resultado</span>
+            </button>
 
             <!-- Error Message (Phase 7.4) -->
             <div v-if="task.error && task.status === 'failed'" class="mt-2 p-2 bg-red-900/20 border border-red-700/50 rounded">
@@ -1051,6 +1105,40 @@ onUnmounted(() => {
               {{ manualAuditSubmitting ? 'Procesando...' : 'Aplicar Decisión' }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 8: Output Stream Modal -->
+    <div v-if="showOutputStream && streamingTaskId" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-2xl border border-gray-700 flex flex-col max-h-[80vh]">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+          <div>
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+              <span>📡</span>
+              Output en Tiempo Real
+            </h3>
+            <p class="text-gray-400 text-xs mt-1">Task ID: {{ streamingTaskId }}</p>
+          </div>
+          <button
+            @click="closeOutputStream"
+            class="text-gray-400 hover:text-white text-2xl leading-none"
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="p-4 flex-1 overflow-y-auto">
+          <TaskOutputStream
+            v-if="streamingTaskId"
+            :task-id="streamingTaskId"
+            :token="authToken"
+            @complete="handleStreamComplete"
+            @error="handleStreamError"
+          />
         </div>
       </div>
     </div>

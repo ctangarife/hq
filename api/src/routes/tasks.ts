@@ -822,4 +822,117 @@ router.post('/:id/auditor-decision', async (req, res, next) => {
   }
 })
 
+// GET /api/tasks/:id/stream - SSE endpoint for streaming task output
+router.get('/:id/stream', async (req, res, next) => {
+  try {
+    const taskId = req.params.id
+
+    // Verify task exists
+    const task = await Task.findById(taskId)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no') // Disable nginx buffering
+
+    // Send initial state
+    const sendEvent = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`)
+    }
+
+    // Send current task state
+    sendEvent({
+      type: 'state',
+      taskId: task._id.toString(),
+      status: task.status,
+      partialOutput: task.partialOutput || '',
+      output: task.output,
+      error: task.error
+    })
+
+    // Subscribe to task events
+    const unsubscribe = taskEventsService.subscribe(taskId, (event) => {
+      sendEvent({
+        type: event.type,
+        taskId: event.taskId,
+        data: event.data
+      })
+    })
+
+    // Handle client disconnect
+    req.on('close', () => {
+      unsubscribe()
+    })
+
+    // Send keepalive comments every 30 seconds to prevent timeout
+    const keepalive = setInterval(() => {
+      res.write(': keepalive\n\n')
+    }, 30000)
+
+    req.on('close', () => {
+      clearInterval(keepalive)
+    })
+
+    // If task is already completed or failed, send final event and close
+    if (task.status === 'completed' || task.status === 'failed') {
+      sendEvent({
+        type: 'done',
+        taskId: task._id.toString(),
+        status: task.status,
+        output: task.output,
+        error: task.error
+      })
+      res.end()
+    }
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:id/partial-output - Update partial output (called by agents during execution)
+router.post('/:id/partial-output', async (req, res, next) => {
+  try {
+    const { chunk, append = true } = req.body
+
+    if (!chunk) {
+      return res.status(400).json({ error: 'Chunk is required' })
+    }
+
+    const task = await Task.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    // Update partial output
+    if (append && task.partialOutput) {
+      task.partialOutput = task.partialOutput + chunk
+    } else {
+      task.partialOutput = chunk
+    }
+    task.lastStreamUpdate = new Date()
+    await task.save()
+
+    // Emit event for SSE subscribers
+    taskEventsService.emit(task._id.toString(), {
+      type: 'partial_output',
+      taskId: task._id.toString(),
+      data: {
+        chunk,
+        partialOutput: task.partialOutput
+      }
+    })
+
+    res.json({
+      success: true,
+      partialOutput: task.partialOutput
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 export default router

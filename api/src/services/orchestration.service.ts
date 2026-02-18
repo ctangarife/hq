@@ -122,15 +122,36 @@ export async function createInitialMissionTask(
     throw new Error(`Mission not found: ${missionId}`)
   }
 
-  const task = new Task({
-    missionId,
-    title: 'Analyze Mission and Create Execution Plan',
-    description: `Analyze the following mission and create a detailed execution plan:
+  // Build enhanced mission description with context fields
+  let enhancedDescription = `Analyze the following mission and create a detailed execution plan:
 
 Mission: ${mission.title}
 Description: ${mission.description}
 Objective: ${mission.objective}
 Priority: ${mission.priority}
+`
+
+  // Add optional context fields if provided
+  if (mission.context) {
+    enhancedDescription += `\nContext: ${mission.context}`
+  }
+  if (mission.audience) {
+    enhancedDescription += `\nTarget Audience: ${mission.audience}`
+  }
+  if (mission.deliverableFormat) {
+    enhancedDescription += `\nExpected Deliverable: ${mission.deliverableFormat}`
+  }
+  if (mission.successCriteria) {
+    enhancedDescription += `\nSuccess Criteria: ${mission.successCriteria}`
+  }
+  if (mission.constraints) {
+    enhancedDescription += `\nConstraints: ${mission.constraints}`
+  }
+  if (mission.tone) {
+    enhancedDescription += `\nCommunication Tone: ${mission.tone}`
+  }
+
+  enhancedDescription += `
 
 Available Agent Templates:
 ${Object.values(AGENT_TEMPLATES)
@@ -138,7 +159,18 @@ ${Object.values(AGENT_TEMPLATES)
   .map(t => `- ${t.id}: ${t.name} (${t.capabilities.join(', ')})`)
   .join('\n')}
 
-Respond with a valid JSON plan following the Squad Lead schema.`,
+IMPORTANT: Consider the context fields above when creating your plan.
+- If audience is specified, tailor complexity appropriately
+- If deliverableFormat is specified, ensure tasks produce that format
+- If constraints exist, work within those bounds
+- If tone is specified, ensure outputs match that style
+
+Respond with a valid JSON plan following the Squad Lead schema.`
+
+  const task = new Task({
+    missionId,
+    title: 'Analyze Mission and Create Execution Plan',
+    description: enhancedDescription,
     type: 'mission_analysis',
     assignedTo: squadLeadId,
     status: 'pending',
@@ -150,6 +182,12 @@ Respond with a valid JSON plan following the Squad Lead schema.`,
       description: mission.description,
       objective: mission.objective,
       priority: mission.priority,
+      context: mission.context,
+      audience: mission.audience,
+      deliverableFormat: mission.deliverableFormat,
+      successCriteria: mission.successCriteria,
+      constraints: mission.constraints,
+      tone: mission.tone,
       availableAgentTemplates: Object.values(AGENT_TEMPLATES)
         .filter(t => t.role !== 'squad_lead')
         .map(t => ({

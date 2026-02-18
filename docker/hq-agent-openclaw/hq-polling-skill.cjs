@@ -99,6 +99,17 @@ class HQPollingSkill {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  /**
+   * Split text into chunks for streaming simulation
+   */
+  splitIntoChunks(text, chunkSize) {
+    const chunks = [];
+    for (let i = 0; i < text.length; i += chunkSize) {
+      chunks.push(text.slice(i, i + chunkSize));
+    }
+    return chunks;
+  }
+
   async getNextTask() {
     try {
       const response = await fetch(
@@ -153,6 +164,26 @@ class HQPollingSkill {
       console.log(`✅ Tarea completada: ${taskId}`);
     } catch (error) {
       console.error('Error completing task:', error.message);
+    }
+  }
+
+  /**
+   * Send partial output during task execution (for streaming)
+   */
+  async sendPartialOutput(taskId, chunk) {
+    try {
+      await fetch(`${config.hqApiUrl}/tasks/${taskId}/partial-output`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.hqApiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ chunk, append: true })
+      });
+      // Don't log to avoid spam
+    } catch (error) {
+      // Silent fail - partial output is optional
+      console.error('Error sending partial output:', error.message);
     }
   }
 
@@ -315,6 +346,24 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
 
     const result = await this.callLLM(messages);
     const content = result.choices[0]?.message?.content || result.content || '';
+
+    // Simulate streaming by sending partial output in chunks
+    // This gives the user visual feedback while the agent is "working"
+    if (content && content.length > 100) {
+      console.log(`📤 Enviando partial output (${content.length} caracteres)...`);
+
+      // Split content into chunks and send with delays
+      const chunks = this.splitIntoChunks(content, 200); // 200 char chunks
+      for (let i = 0; i < chunks.length; i++) {
+        // Send partial output
+        await this.sendPartialOutput(task._id, chunks[i]);
+
+        // Small delay between chunks (100ms) to simulate streaming
+        if (i < chunks.length - 1) {
+          await this.sleep(100);
+        }
+      }
+    }
 
     // Check if the response is asking for more information (human input)
     // This applies to ALL task types, not just mission_analysis

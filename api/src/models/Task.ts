@@ -37,6 +37,9 @@ export interface ITask extends Document {
   maxRetries?: number          // Máximo de reintentos (default: 3)
   retryHistory?: RetryAttempt[]  // Historial de reintentos
   auditorReviewId?: string     // ID de tarea de auditoría asociada
+  // Streaming output (Phase 8)
+  partialOutput?: string       // Output parcial acumulado durante ejecución
+  lastStreamUpdate?: Date      // Última vez que se actualizó partialOutput
 }
 
 export interface RetryAttempt {
@@ -94,7 +97,10 @@ const taskSchema = new Schema<ITask>({
     timestamp: { type: Date, required: true },
     agentId: { type: String }
   }],
-  auditorReviewId: { type: String }  // ID de tarea de auditoría asociada
+  auditorReviewId: { type: String },  // ID de tarea de auditoría asociada
+  // Streaming output (Phase 8)
+  partialOutput: { type: String },  // Output parcial acumulado durante ejecución
+  lastStreamUpdate: { type: Date }  // Última vez que se actualizó partialOutput
 }, {
   timestamps: true
 })
