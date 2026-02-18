@@ -8,6 +8,7 @@ import Task from '../models/Task.js'
 import Mission from '../models/Mission.js'
 import { dockerService } from './docker.service.js'
 import { getSquadLeadTemplate, AGENT_TEMPLATES } from '../config/agent-templates.js'
+import { agentScoringService } from './agent-scoring.service.js'
 import type {
   SquadLeadOutput,
   AgentDefinition,
@@ -307,18 +308,30 @@ export async function processSquadLeadOutput(
 
   for (const taskDef of output.tasks) {
     try {
-      // Map agent role to actual agent ID
+      // Map agent role to actual agent ID using scoring (Phase 9)
       let assignedTo: string | undefined
       if (taskDef.assignedAgentRole) {
-        // Find agent by role
-        const agents = await Agent.find({
-          role: taskDef.assignedAgentRole,
-          currentMissionId: mission._id.toString(),
-          status: { $in: ['active', 'idle', 'inactive'] }
+        // Use scoring to find the best agent for this task
+        const bestAgent = await agentScoringService.getBestAgent({
+          taskType: taskDef.type,
+          requiredCapabilities: taskDef.requiredCapabilities,
+          missionId: mission._id.toString()
         })
-        if (agents.length > 0) {
-          // Use containerId if available, otherwise use agent _id
-          assignedTo = agents[0].containerId || agents[0]._id.toString()
+
+        if (bestAgent) {
+          assignedTo = bestAgent.agentId // Use agentId for assignment
+          console.log(`📊 Task "${taskDef.title}" assigned to ${bestAgent.agentName} (score: ${bestAgent.score})`)
+        } else {
+          // Fallback: find any agent with matching role
+          const agents = await Agent.find({
+            role: taskDef.assignedAgentRole,
+            currentMissionId: mission._id.toString(),
+            status: { $in: ['active', 'idle', 'inactive'] }
+          })
+          if (agents.length > 0) {
+            assignedTo = agents[0].containerId || agents[0]._id.toString()
+            console.log(`⚠️ No scored agent found, using fallback: ${agents[0].name}`)
+          }
         }
       }
 

@@ -806,8 +806,8 @@ curl -X POST http://localhost:3001/api/agents \
 - [x] Phase 6: Archivos y Entregables
 - [x] Phase 7: Sistema de Reintentos y Auditor Agent
 - [x] Phase 8.1: Streaming de Outputs
-- [ ] Phase 8.2: Consolidación de Outputs (PDF)
-- [ ] Phase 9: Optimización de Asignación de Agentes
+- [x] Phase 8.2: Consolidación de Outputs (PDF)
+- [x] Phase 9: Optimización de Asignación de Agentes
 - [ ] Phase 10: Mejoras de UX
 - [ ] Phase 11: Telegram Integration
 
@@ -825,6 +825,9 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 - ✅ Isometric Activity View - Vista visual de agentes en zonas (Work Control, Work Area, Lounge)
 - ✅ SSE Activity Stream - Stream de eventos en tiempo real
 - ✅ **Task Output Streaming** - Ver outputs de tareas en tiempo real mientras se generan
+- ✅ **PDF Consolidation** - Generar entregables PDF consolidados desde outputs de tareas
+- ✅ **Agent Scoring System** - Asignación inteligente de agentes basada en rol, disponibilidad, historial de éxito y carga de trabajo
+- ✅ **Agent Metrics** - Métricas de rendimiento almacenadas y actualizadas automáticamente
 - ✅ **File Management** - Subida y adjuntación de archivos a misiones
 - ✅ **Retry & Auditor System** - Reintentos automáticos y agente auditor inteligente
 
@@ -842,10 +845,10 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 ### Agentes Deployados
 - **Cabezón** (Squad Lead) - Z.ai glm-4-plus - Listo para orquestar misiones
 
-### Próximos Pasos (Phase 8.2)
-1. **Consolidación de Outputs** - Generar PDFs con resultados finales
-2. **Sistema de Scoring** - Asignación inteligente de agentes a tareas
-3. **Métricas de Agentes** - Historial de rendimiento y éxito
+### Próximos Pasos (Phase 10)
+1. **Plantillas de Misiones** - Misiones predefinidas para casos comunes (Análisis de Datos, Reportes PDF, Desarrollo, Investigación)
+2. **Telegram Integration** - Control del sistema HQ vía chat
+3. **Features Avanzadas** - Dependencias entre tareas, Multi-mission orquestation
 
 ## Troubleshooting
 

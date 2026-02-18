@@ -8,6 +8,7 @@ import {
 } from '../services/orchestration.service.js'
 import { taskEventsService } from '../services/task-events.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
+import { agentScoringService } from '../services/agent-scoring.service.js'
 
 const router = Router()
 
@@ -311,6 +312,7 @@ router.post('/:id/complete', async (req, res, next) => {
       return res.status(400).json({ error: 'Task can only be completed from in_progress status' })
     }
 
+    const oldStatus = task.status
     task.status = completed ? 'completed' : 'failed'
     task.output = output || {}
     task.completedAt = new Date()
@@ -321,6 +323,19 @@ router.post('/:id/complete', async (req, res, next) => {
     }
 
     await task.save()
+
+    // Phase 9: Update agent metrics
+    if (task.assignedTo && oldStatus !== task.status) {
+      const duration = task.completedAt && task.startedAt
+        ? task.completedAt.getTime() - task.startedAt.getTime()
+        : 0
+
+      await agentScoringService.updateAgentMetrics(
+        task.assignedTo,
+        task.status,
+        duration
+      )
+    }
 
     // Check if mission is completed after this task
     if (task.missionId) {
@@ -344,6 +359,8 @@ router.post('/:id/fail', async (req, res, next) => {
       return res.status(404).json({ error: 'Task not found' })
     }
 
+    const oldStatus = task.status
+
     // Record retry attempt
     await task.recordRetry(errorMessage, task.assignedTo)
 
@@ -352,6 +369,19 @@ router.post('/:id/fail', async (req, res, next) => {
     task.error = errorMessage
     task.completedAt = new Date()
     await task.save()
+
+    // Phase 9: Update agent metrics when final failure occurs (no more retries)
+    if (task.assignedTo && task.retryCount >= task.maxRetries && oldStatus !== 'failed') {
+      const duration = task.completedAt && task.startedAt
+        ? task.completedAt.getTime() - task.startedAt.getTime()
+        : 0
+
+      await agentScoringService.updateAgentMetrics(
+        task.assignedTo,
+        'failed',
+        duration
+      )
+    }
 
     // Log activity
     await activityLog.taskFailed(task.title, errorMessage, task._id.toString())

@@ -45,6 +45,7 @@ export interface SystemMetrics {
 
 /**
  * Get metrics for a specific agent
+ * Phase 9: Uses stored metrics from Agent model for efficiency
  */
 export async function getAgentMetrics(agentId: string): Promise<AgentMetrics | null> {
   const agent = await Agent.findById(agentId)
@@ -52,36 +53,23 @@ export async function getAgentMetrics(agentId: string): Promise<AgentMetrics | n
     return null
   }
 
-  const tasks = await Task.find({ assignedTo: agentId })
+  // Use stored metrics from Agent model (Phase 9)
+  const tasksCompleted = agent.tasksCompleted || 0
+  const tasksFailed = agent.tasksFailed || 0
+  const tasksTotal = tasksCompleted + tasksFailed
+  const successRate = agent.successRate || 100
+  const averageDuration = agent.averageDuration || 0
 
-  const completedTasks = tasks.filter(t => t.status === 'completed')
-  const failedTasks = tasks.filter(t => t.status === 'failed')
-
-  // Calculate average duration
-  const durations = completedTasks
-    .filter(t => t.startedAt && t.completedAt)
-    .map(t => t.completedAt!.getTime() - t.startedAt!.getTime())
-
-  const averageDuration = durations.length > 0
-    ? durations.reduce((a, b) => a + b, 0) / durations.length
-    : 0
-
-  // Get last activity
-  const lastActivity = tasks.length > 0
-    ? new Date(Math.max(...tasks.map(t => new Date(t.updatedAt).getTime())))
-    : undefined
-
-  const successRate = tasks.length > 0
-    ? (completedTasks.length / tasks.length) * 100
-    : 0
+  // Get last activity from timestamps
+  const lastActivity = agent.lastTaskCompletedAt || agent.updatedAt
 
   return {
     agentId: agent._id.toString(),
     agentName: agent.name,
     agentRole: agent.role,
-    tasksCompleted: completedTasks.length,
-    tasksFailed: failedTasks.length,
-    tasksTotal: tasks.length,
+    tasksCompleted,
+    tasksFailed,
+    tasksTotal,
     successRate: Math.round(successRate * 10) / 10,
     averageDuration: Math.round(averageDuration),
     lastActivity,

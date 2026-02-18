@@ -16,6 +16,13 @@ export interface IAgent extends Document {
   totalMissionsCompleted: number
   lastMissionCompletedAt?: Date
   isReusable: boolean
+  // Phase 9: Agent Metrics fields
+  tasksCompleted: number        // Total tasks completed successfully
+  tasksFailed: number           // Total tasks that failed
+  successRate: number           // Percentage (0-100)
+  totalDuration: number         // Accumulated duration in ms
+  averageDuration: number       // Average task duration in ms
+  lastTaskCompletedAt?: Date    // Timestamp of last completed task
   createdAt: Date
   updatedAt: Date
 }
@@ -39,7 +46,14 @@ const agentSchema = new Schema({
   missionHistory: [{ type: String }],
   totalMissionsCompleted: { type: Number, default: 0 },
   lastMissionCompletedAt: { type: Date },
-  isReusable: { type: Boolean, default: true }
+  isReusable: { type: Boolean, default: true },
+  // Phase 9: Agent Metrics
+  tasksCompleted: { type: Number, default: 0 },
+  tasksFailed: { type: Number, default: 0 },
+  successRate: { type: Number, default: 100 },
+  totalDuration: { type: Number, default: 0 },
+  averageDuration: { type: Number, default: 0 },
+  lastTaskCompletedAt: { type: Date }
 }, {
   timestamps: true
 })

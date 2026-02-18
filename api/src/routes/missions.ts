@@ -6,6 +6,7 @@ import {
   createInitialMissionTask
 } from '../services/orchestration.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
+import { fileManagementService } from '../services/file-management.service.js'
 
 const router = Router()
 
@@ -396,6 +397,65 @@ router.post('/:id/orchestrate', async (req, res, next) => {
       }
     })
   } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/missions/:id/consolidate - Consolidate mission outputs into PDF
+router.post('/:id/consolidate', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    // Verificar que la misión tenga tareas completadas
+    const tasks = await Task.find({ missionId: req.params.id })
+    const completedTasks = tasks.filter(t => t.status === 'completed')
+
+    if (completedTasks.length === 0) {
+      return res.status(400).json({ error: 'No completed tasks to consolidate' })
+    }
+
+    // Consolidar outputs usando el servicio
+    const reportPath = await fileManagementService.consolidateMissionOutputs(req.params.id)
+
+    // Obtener metadata actualizada
+    const metadata = await fileManagementService.getMissionMetadata(req.params.id)
+
+    // Add orchestration log entry
+    mission.orchestrationLog.push({
+      timestamp: new Date(),
+      action: 'outputs_consolidated',
+      details: {
+        tasksConsolidated: completedTasks.length,
+        reportPath
+      }
+    })
+    await mission.save()
+
+    // Log activity
+    await activityLog.log({
+      type: 'mission.consolidated',
+      missionId: mission._id.toString(),
+      title: mission.title,
+      details: {
+        tasksCount: completedTasks.length,
+        reportPath
+      },
+      timestamp: new Date()
+    })
+
+    res.json({
+      message: 'Mission outputs consolidated successfully',
+      missionId: mission._id,
+      reportPath,
+      outputFiles: metadata?.outputFiles || [],
+      tasksConsolidated: completedTasks.length
+    })
+  } catch (error) {
+    console.error('Error consolidating mission outputs:', error)
     next(error)
   }
 })

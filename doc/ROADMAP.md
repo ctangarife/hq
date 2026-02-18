@@ -34,6 +34,16 @@ Este documento describe las características planificadas y mejoras futuras del 
   - Simulación de streaming con chunks de 200 caracteres
   - Componente TaskOutputStream con indicador Live 🔴
   - Botón "📡 Ver Output Live" en tarjetas de tareas
+- **Phase 8.2** ✅ - Consolidación de Outputs COMPLETO
+  - Generación de PDF desde Markdown usando PDFKit
+  - Botón "📄 Consolidar" en tarjetas de misión
+  - Archivos: final_report.md y final_report.pdf en /missions/{id}/outputs/
+- **Phase 9** ✅ - Optimización de Asignación de Agentes COMPLETO
+  - Sistema de Scoring con 4 factores (rol, disponibilidad, éxito, workload)
+  - Métricas de agentes almacenadas en modelo (tasksCompleted, tasksFailed, successRate, totalDuration, averageDuration)
+  - Endpoints: GET /api/agents/:id/metrics, POST /api/agents/score, GET /api/agents/:id/score
+  - Actualización automática de métricas al completar/fallar tareas
+  - Orchestration usa scoring para seleccionar mejor agente
 
 ---
 
@@ -58,13 +68,19 @@ Este documento describe las características planificadas y mejoras futuras del 
 - Botón "📡 Ver Output Live" en tarjetas de tareas in_progress/completed
 - Modal con panel de output stream en tiempo real
 
-#### 8.2 Consolidación de Outputs
-- [ ] Servicio para consolidar outputs de múltiples tareas
-- [ ] Generación de PDF desde Markdown (usando `pdf-kit` o `markdown-pdf`)
-- [ ] Endpoint: `POST /api/missions/:id/consolidate` - Generar entregable final
-- [ ] Archivo final en `/missions/{id}/outputs/final.pdf`
+#### 8.2 Consolidación de Outputs ✅
+- [x] Servicio para consolidar outputs de múltiples tareas
+- [x] Generación de PDF desde Markdown (usando `pdfkit`)
+- [x] Endpoint: `POST /api/resources/mission/:missionId/consolidate` - Generar entregable final
+- [x] Archivo final en `/missions/{id}/outputs/final_report.pdf`
 
-**Archivos**: `api/src/services/file-management.service.ts`, `api/src/routes/missions.ts`
+**Archivos**: `api/src/services/file-management.service.ts`, `api/src/routes/resources.ts`, `data/frontend/src/views/MissionsView.vue` ✅ Done
+
+**Cambios Implementados**:
+- Implementación real de `generatePDF()` usando PDFKit
+- Convierte markdown a PDF con formato (títulos, código, listas, separadores)
+- Botón "📄 Consolidar" en tarjetas de misión (visible cuando status es completed/active)
+- Guarda PDF y Markdown en `/missions/{id}/outputs/`
 
 ---
 
@@ -72,28 +88,36 @@ Este documento describe las características planificadas y mejoras futuras del 
 
 **Objetivo**: Sistema inteligente de puntuación para asignar el mejor agente a cada tarea.
 
-#### 9.1 Sistema de Scoring
-- [ ] Servicio `agent-scoring.service.ts` con lógica de puntuación:
+#### 9.1 Sistema de Scoring ✅
+- [x] Servicio `agent-scoring.service.ts` con lógica de puntuación:
   - Match de rol/capacidades (+40)
   - Disponibilidad (+30)
   - Historial de éxito (+20)
   - Carga de trabajo actual (-10 por tarea pendiente)
-- [ ] Modificar `orchestration.service.ts` para usar scoring
-- [ ] Guardar historial de tareas completadas por agente
+- [x] Modificar `orchestration.service.ts` para usar scoring
+- [x] Guardar historial de tareas completadas por agente
 
-**Archivos**: `api/src/services/agent-scoring.service.ts`, `api/src/models/Agent.ts`
+**Archivos**: `api/src/services/agent-scoring.service.ts`, `api/src/models/Agent.ts`, `api/src/services/orchestration.service.ts` ✅ Done
 
-#### 9.2 Métricas de Agentes
-- [ ] Agregar campos a `Agent.ts`:
+#### 9.2 Métricas de Agentes ✅
+- [x] Agregar campos a `Agent.ts`:
   - `tasksCompleted: number`
   - `tasksFailed: number`
   - `successRate: number`
   - `totalDuration: number` - ms acumuladas
   - `averageDuration: number` - ms promedio
-- [ ] Endpoint: `GET /api/agents/:id/metrics` - Métricas detalladas
-- [ ] Gráficos de rendimiento en la vista de agentes
+- [x] Endpoint: `GET /api/agents/:id/metrics` - Métricas detalladas
+- [x] Endpoint: `POST /api/agents/score` - Score agentes para una tarea
+- [x] Actualización automática de métricas al completar/fallar tareas
 
-**Archivos**: `api/src/models/Agent.ts`, `api/src/routes/agents.ts`, `data/frontend/src/views/AgentsView.vue`
+**Archivos**: `api/src/models/Agent.ts`, `api/src/routes/agents.ts`, `api/src/routes/tasks.ts`, `api/src/services/agents-metrics.service.ts` ✅ Done
+
+**Cambios Implementados**:
+- Sistema de scoring con 4 factores (rol, disponibilidad, éxito, workload)
+- Mejor agente seleccionado automáticamente al crear tareas
+- Métricas almacenadas en modelo Agent (no calculadas en tiempo real)
+- Endpoints para consultar métricas y scoring
+- Actualización automática de métricas en /tasks/:id/complete y /tasks/:id/fail
 
 ---
 

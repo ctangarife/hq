@@ -4,6 +4,7 @@ import { dockerService } from '../services/docker.service.js'
 import { getModelInfo, getProviderModels } from '../config/provider-models.js'
 import * as agentsMetricsService from '../services/agents-metrics.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
+import { agentScoringService } from '../services/agent-scoring.service.js'
 
 const router = Router()
 
@@ -521,6 +522,53 @@ router.get('/metrics/system', async (req, res, next) => {
 
     const metrics = await agentsMetricsService.getSystemMetrics(options)
     res.json(metrics)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// ========== Phase 9: Agent Scoring Endpoints ==========
+
+// POST /api/agents/score - Score agents for a task
+router.post('/score', async (req, res, next) => {
+  try {
+    const { taskType, requiredCapabilities, preferredAgentId, missionId } = req.body
+
+    const scores = await agentScoringService.scoreAgents({
+      taskType,
+      requiredCapabilities,
+      preferredAgentId,
+      missionId
+    })
+
+    res.json({
+      criteria: { taskType, requiredCapabilities, preferredAgentId, missionId },
+      agents: scores,
+      bestAgent: scores.length > 0 ? scores[0] : null,
+      totalAgents: scores.length
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/agents/:id/score - Get score breakdown for a specific agent
+router.get('/:id/score', async (req, res, next) => {
+  try {
+    const { taskType, requiredCapabilities, missionId } = req.query
+
+    const agent = await Agent.findById(req.params.id)
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+
+    const score = await agentScoringService.scoreAgent(agent, {
+      taskType: taskType as string,
+      requiredCapabilities: requiredCapabilities ? (requiredCapabilities as string).split(',') : undefined,
+      missionId: missionId as string
+    })
+
+    res.json(score)
   } catch (error) {
     next(error)
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { missionsService, tasksService, attachmentsService } from '@/services/api'
+import { missionsService, tasksService, attachmentsService, resourcesService } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
 
@@ -334,6 +334,19 @@ const deleteMission = async (id: string) => {
   }
 }
 
+// Consolidate mission outputs
+const consolidateMission = async (missionId: string) => {
+  if (!confirm('¿Consolidar outputs de esta misión en un PDF?')) return
+  try {
+    await resourcesService.consolidate(missionId)
+    alert('✅ Outputs consolidados exitosamente')
+    await fetchMissions()
+  } catch (err) {
+    console.error('Error consolidating mission:', err)
+    alert('Error al consolidar outputs')
+  }
+}
+
 // Fetch human input tasks
 const fetchHumanTasks = async () => {
   try {
@@ -569,6 +582,16 @@ onMounted(() => {
               title="Panel de control de misión"
             >
               🎮 Control
+            </button>
+
+            <!-- Consolidate Button (Phase 8.2) -->
+            <button
+              v-if="mission.status === 'completed' || mission.status === 'active'"
+              @click="consolidateMission(mission._id)"
+              class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-sm transition"
+              title="Consolidar outputs en PDF"
+            >
+              📄 Consolidar
             </button>
 
             <!-- Status Actions -->

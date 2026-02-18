@@ -1,8 +1,10 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { createReadStream, createWriteStream } from 'fs'
+import { createReadStream, createWriteStream, readFileSync } from 'fs'
 import crypto from 'crypto'
 import { mkdirp } from 'mkdirp'
+import PDFDocument from 'pdfkit'
+import { marked } from 'marked'
 
 const FILES_BASE_PATH = process.env.HQ_FILES_PATH || '/data/hq-files'
 
@@ -306,12 +308,191 @@ export class FileManagementService {
 
   /**
    * Generar PDF desde markdown
-   * TODO: Implementar con pdf-kit o markdown-pdf
+   * Convierte markdown a HTML y luego genera PDF con PDFKit
    */
   async generatePDF(markdown: string, outputPath: string): Promise<void> {
-    // Placeholder - por ahora guardamos el markdown
-    // En la siguiente fase implementamos la conversión real a PDF
-    await fs.writeFile(outputPath, markdown)
+    return new Promise((resolve, reject) => {
+      try {
+        // Crear documento PDF
+        const doc = new PDFDocument({
+          size: 'A4',
+          margins: {
+            top: 50,
+            bottom: 50,
+            left: 50,
+            right: 50
+          },
+          bufferPages: true
+        })
+
+        // Pipe output a archivo
+        const stream = createWriteStream(outputPath)
+        doc.pipe(stream)
+
+        // Configurar fuentes
+        const fontSize = {
+          title: 24,
+          h1: 20,
+          h2: 16,
+          h3: 14,
+          body: 11,
+          code: 9
+        }
+
+        let yPosition = doc.y
+        const pageHeight = doc.page.height
+        const marginBottom = 50
+        const lineHeight = 1.4
+
+        // Función para verificar espacio y agregar nueva página si es necesario
+        const checkPageBreak = (requiredSpace: number) => {
+          if (yPosition + requiredSpace > pageHeight - marginBottom) {
+            doc.addPage()
+            yPosition = doc.y
+          }
+        }
+
+        // Procesar línea por línea
+        const lines = markdown.split('\n')
+        let inCodeBlock = false
+        let codeLines: string[] = []
+
+        for (const rawLine of lines) {
+          const line = rawLine.trimEnd()
+
+          // Detectar bloques de código
+          if (line.startsWith('```')) {
+            if (inCodeBlock) {
+              // Finalizar bloque de código
+              inCodeBlock = false
+
+              // Dibujar bloque de código
+              checkPageBreak(20 + codeLines.length * 14)
+
+              // Fondo gris para el bloque
+              const codeWidth = doc.page.width - 100
+              doc.rect(50, yPosition, codeWidth, codeLines.length * 14 + 10)
+                .fillAndStroke('#f5f5f5', '#e0e0e0')
+
+              yPosition += 5
+
+              // Escribir líneas de código
+              doc.font('Courier')
+                .fontSize(fontSize.code)
+                .fillColor('#333333')
+
+              for (const codeLine of codeLines) {
+                doc.text(codeLine, 55, yPosition, {
+                  width: codeWidth - 10,
+                  lineGap: 2
+                })
+                yPosition += 14
+              }
+
+              yPosition += 5
+              codeLines = []
+            } else {
+              // Iniciar bloque de código
+              inCodeBlock = true
+            }
+            continue
+          }
+
+          // Si estamos en un bloque de código, acumular líneas
+          if (inCodeBlock) {
+            codeLines.push(line)
+            continue
+          }
+
+          // Procesar encabezados
+          if (line.startsWith('# ')) {
+            checkPageBreak(30)
+            doc.font('Helvetica-Bold')
+              .fontSize(fontSize.h1)
+              .fillColor('#000000')
+              .text(line.substring(2), 50, yPosition)
+            yPosition = doc.y + 10
+            continue
+          }
+
+          if (line.startsWith('## ')) {
+            checkPageBreak(25)
+            doc.font('Helvetica-Bold')
+              .fontSize(fontSize.h2)
+              .fillColor('#333333')
+              .text(line.substring(3), 50, yPosition)
+            yPosition = doc.y + 8
+            continue
+          }
+
+          if (line.startsWith('### ')) {
+            checkPageBreak(22)
+            doc.font('Helvetica-Bold')
+              .fontSize(fontSize.h3)
+              .fillColor('#555555')
+              .text(line.substring(4), 50, yPosition)
+            yPosition = doc.y + 6
+            continue
+          }
+
+          // Separador horizontal
+          if (line.startsWith('---')) {
+            checkPageBreak(20)
+            doc.moveTo(50, yPosition)
+              .lineTo(doc.page.width - 50, yPosition)
+              .stroke('#cccccc')
+            yPosition += 15
+            continue
+          }
+
+          // Lista (items que empiezan con - o *)
+          if (line.startsWith('- ') || line.startsWith('* ')) {
+            checkPageBreak(18)
+            doc.font('Helvetica')
+              .fontSize(fontSize.body)
+              .fillColor('#333333')
+              .text('• ' + line.substring(2), 60, yPosition, {
+                lineGap: 3
+              })
+            yPosition = doc.y + 5
+            continue
+          }
+
+          // Línea vacía
+          if (line === '') {
+            yPosition += 8
+            continue
+          }
+
+          // Texto normal
+          if (line.length > 0) {
+            checkPageBreak(20)
+            doc.font('Helvetica')
+              .fontSize(fontSize.body)
+              .fillColor('#333333')
+              .text(line, 50, yPosition, {
+                lineGap: 4,
+                align: 'left'
+              })
+            yPosition = doc.y + 5
+          }
+        }
+
+        // Finalizar PDF
+        doc.end()
+
+        stream.on('finish', () => {
+          console.log(`✅ PDF generated: ${outputPath}`)
+          resolve()
+        })
+
+        stream.on('error', (err) => {
+          reject(err)
+        })
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 
   /**
