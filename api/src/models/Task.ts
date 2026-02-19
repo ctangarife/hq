@@ -141,4 +141,143 @@ taskSchema.methods.requestAudit = function(auditorTaskId: string) {
   return task.save()
 }
 
+// Phase 12.1: Métodos para manejo de dependencias
+
+/**
+ * Verificar si todas las dependencias están completadas
+ */
+taskSchema.methods.areDependenciesCompleted = async function(): Promise<boolean> {
+  const task = this as any
+
+  if (!task.dependencies || task.dependencies.length === 0) {
+    return true  // Sin dependencias, puede ejecutarse
+  }
+
+  // Buscar tareas dependientes
+  const TaskModel = mongoose.model('Task')
+  const dependentTasks = await TaskModel.find({
+    _id: { $in: task.dependencies }
+  })
+
+  // Verificar que todas estén completadas
+  return dependentTasks.every(t => t.status === 'completed')
+}
+
+/**
+ * Verificar si hay dependencia circular
+ * Retorna el ciclo encontrado o null
+ */
+taskSchema.methods.detectCircularDependency = async function(cycle: string[] = []): Promise<string[] | null> {
+  const task = this as any
+  const taskId = task._id.toString()
+
+  // Si ya visitamos este nodo, hay un ciclo
+  if (cycle.includes(taskId)) {
+    return [...cycle, taskId]
+  }
+
+  // Si no tiene dependencias, no hay ciclo
+  if (!task.dependencies || task.dependencies.length === 0) {
+    return null
+  }
+
+  // Verificar cada dependencia recursivamente
+  const TaskModel = mongoose.model('Task')
+  for (const depId of task.dependencies) {
+    const depTask = await TaskModel.findById(depId)
+    if (depTask) {
+      const result = await depTask.detectCircularDependency([...cycle, taskId])
+      if (result) {
+        return result
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Obtener tareas que dependen de esta tarea (downstream)
+ */
+taskSchema.methods.getDependentTasks = async function(): Promise<any[]> {
+  const task = this as any
+  const taskId = task._id.toString()
+
+  // Buscar tareas que tienen esta tarea en sus dependencies
+  const TaskModel = mongoose.model('Task')
+  const dependentTasks = await TaskModel.find({
+    dependencies: taskId
+  })
+
+  return dependentTasks
+}
+
+/**
+ * Obtener tareas que esta tarea depende (upstream)
+ */
+taskSchema.methods.getUpstreamTasks = async function(): Promise<any[]> {
+  const task = this as any
+
+  if (!task.dependencies || task.dependencies.length === 0) {
+    return []
+  }
+
+  const TaskModel = mongoose.model('Task')
+  const upstreamTasks = await TaskModel.find({
+    _id: { $in: task.dependencies }
+  })
+
+  return upstreamTasks
+}
+
+/**
+ * Obtener nivel en el DAG (distancia desde tareas sin dependencias)
+ * Útil para visualización en capas
+ */
+taskSchema.methods.getDAGLevel = async function(): Promise<number> {
+  const task = this as any
+
+  if (!task.dependencies || task.dependencies.length === 0) {
+    return 0  // Tarea raíz
+  }
+
+  const TaskModel = mongoose.model('Task')
+  let maxLevel = 0
+  for (const depId of task.dependencies) {
+    const depTask = await TaskModel.findById(depId)
+    if (depTask) {
+      const depLevel = await depTask.getDAGLevel()
+      maxLevel = Math.max(maxLevel, depLevel + 1)
+    }
+  }
+
+  return maxLevel
+}
+
+/**
+ * Verificar si puede ejecutarse (dependencias completadas y no hay bloqueos)
+ */
+taskSchema.methods.canExecute = async function(): Promise<{ canExecute: boolean; reason?: string }> {
+  const task = this as any
+
+  // Verificar que dependencias estén completadas
+  const depsCompleted = await task.areDependenciesCompleted()
+  if (!depsCompleted) {
+    return {
+      canExecute: false,
+      reason: 'Dependencies not completed'
+    }
+  }
+
+  // Verificar que no esté ya completada o fallida
+  if (task.status === 'completed' || task.status === 'failed') {
+    return {
+      canExecute: false,
+      reason: `Task already ${task.status}`
+    }
+  }
+
+  return { canExecute: true }
+}
+
 export default mongoose.model<ITask>('Task', taskSchema)

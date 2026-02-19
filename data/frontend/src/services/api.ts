@@ -161,4 +161,28 @@ export const resourcesService = {
     new EventSource(`${API_URL}/resources/task/${taskId}/stream?missionId=${missionId}`)
 }
 
+// Mission Templates Service (Phase 10.2)
+export const templatesService = {
+  // Get all templates
+  getAll: (category?: string, tag?: string) => {
+    const params = new URLSearchParams()
+    if (category) params.append('category', category)
+    if (tag) params.append('tag', tag)
+    return api.get(`/mission-templates?${params.toString()}`)
+  },
+  // Get template by ID
+  getById: (id: string) => api.get(`/mission-templates/${id}`),
+  // Create custom template
+  create: (data: any) => api.post('/mission-templates', data),
+  // Update template
+  update: (id: string, data: any) => api.put(`/mission-templates/${id}`, data),
+  // Delete template
+  delete: (id: string) => api.delete(`/mission-templates/${id}`),
+  // Create mission from template
+  createMission: (templateId: string, params: Record<string, string>) =>
+    api.post(`/mission-templates/from-template/${templateId}`, { params }),
+  // Initialize system templates
+  initializeSystem: () => api.post('/mission-templates/initialize-system')
+}
+
 export default api

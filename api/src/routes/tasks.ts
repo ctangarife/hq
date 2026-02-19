@@ -9,6 +9,7 @@ import {
 import { taskEventsService } from '../services/task-events.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
 import { agentScoringService } from '../services/agent-scoring.service.js'
+import { taskDependenciesService } from '../services/dependencies.service.js'
 
 const router = Router()
 
@@ -959,6 +960,165 @@ router.post('/:id/partial-output', async (req, res, next) => {
     res.json({
       success: true,
       partialOutput: task.partialOutput
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// ========== Phase 12.1: Task Dependencies (DAG) ==========
+
+// GET /api/tasks/mission/:missionId/dag - Get dependency graph
+router.get('/mission/:missionId/dag', async (req, res, next) => {
+  try {
+    const { missionId } = req.params
+    const dag = await taskDependenciesService.getMissionDAG(missionId)
+    res.json(dag)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/tasks/mission/:missionId/dependencies/stats - Get dependency stats
+router.get('/mission/:missionId/dependencies/stats', async (req, res, next) => {
+  try {
+    const { missionId } = req.params
+    const stats = await taskDependenciesService.getDependencyStats(missionId)
+    res.json(stats)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/tasks/mission/:missionId/dependencies/executable - Get executable tasks
+router.get('/mission/:missionId/dependencies/executable', async (req, res, next) => {
+  try {
+    const { missionId } = req.params
+    const tasks = await taskDependenciesService.getExecutableTasks(missionId)
+    res.json({ tasks, count: tasks.length })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/tasks/mission/:missionId/dependencies/blocked - Get blocked tasks
+router.get('/mission/:missionId/dependencies/blocked', async (req, res, next) => {
+  try {
+    const { missionId } = req.params
+    const blocked = await taskDependenciesService.getBlockedTasks(missionId)
+    res.json({ blocked, count: blocked.length })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/tasks/mission/:missionId/dependencies/critical-path - Get critical path
+router.get('/mission/:missionId/dependencies/critical-path', async (req, res, next) => {
+  try {
+    const { missionId } = req.params
+    const path = await taskDependenciesService.getCriticalPath(missionId)
+    res.json({ path, length: path.length })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/tasks/:taskId/dependencies - Add dependency to task
+router.post('/:taskId/dependencies', async (req, res, next) => {
+  try {
+    const { dependsOnTaskId } = req.body  // Task ID que esta tarea depende
+
+    if (!dependsOnTaskId) {
+      return res.status(400).json({ error: 'dependsOnTaskId is required' })
+    }
+
+    const task = await Task.findById(req.params.taskId)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    // Validar que no sea auto-dependencia
+    if (dependsOnTaskId === task._id.toString()) {
+      return res.status(400).json({ error: 'Task cannot depend on itself' })
+    }
+
+    // Agregar dependencia si no existe
+    if (!task.dependencies) {
+      task.dependencies = []
+    }
+
+    if (task.dependencies.includes(dependsOnTaskId)) {
+      return res.status(400).json({ error: 'Dependency already exists' })
+    }
+
+    task.dependencies.push(dependsOnTaskId)
+
+    // Verificar que no cree un ciclo
+    const cycle = await task.detectCircularDependency()
+    if (cycle) {
+      // Revertir el cambio
+      task.dependencies = task.dependencies.filter((id: string) => id !== dependsOnTaskId)
+      await task.save()
+
+      return res.status(400).json({
+        error: 'Circular dependency detected',
+        cycle
+      })
+    }
+
+    await task.save()
+
+    // Log activity
+    await activityLog.log({
+      type: 'task.dependency_added',
+      taskId: task._id.toString(),
+      dependsOn: dependsOnTaskId,
+      timestamp: new Date()
+    })
+
+    res.json({
+      message: 'Dependency added',
+      task,
+      dependencies: task.dependencies
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// DELETE /api/tasks/:taskId/dependencies/:dependsOnTaskId - Remove dependency
+router.delete('/:taskId/dependencies/:dependsOnTaskId', async (req, res, next) => {
+  try {
+    const task = await Task.findById(req.params.taskId)
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' })
+    }
+
+    if (!task.dependencies) {
+      return res.status(404).json({ error: 'Dependency not found' })
+    }
+
+    const filtered = task.dependencies.filter((id: string) => id !== req.params.dependsOnTaskId)
+
+    if (filtered.length === task.dependencies.length) {
+      return res.status(404).json({ error: 'Dependency not found in task' })
+    }
+
+    task.dependencies = filtered
+    await task.save()
+
+    // Log activity
+    await activityLog.log({
+      type: 'task.dependency_removed',
+      taskId: task._id.toString(),
+      dependsOn: req.params.dependsOnTaskId,
+      timestamp: new Date()
+    })
+
+    res.json({
+      message: 'Dependency removed',
+      task,
+      dependencies: task.dependencies
     })
   } catch (error) {
     next(error)

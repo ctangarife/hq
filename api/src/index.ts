@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { connectMongo } from './lib/mongodb.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { authMiddleware } from './middleware/auth.js'
+import { MissionTemplate } from './models/MissionTemplate.js'
 
 // Routes
 import missionRoutes from './routes/missions.js'
@@ -14,6 +15,7 @@ import providersRoutes from './routes/providers.js'
 import activityRoutes from './routes/activity.js'
 import resourcesRoutes from './routes/resources.js'
 import attachmentsRoutes from './routes/attachments.js'
+import missionTemplatesRoutes from './routes/mission-templates.routes.js'
 
 // Credentials management - Eliminado (no necesitamos)
 // import configRoutes from './routes/config.js'
@@ -51,6 +53,7 @@ app.use('/api/providers', providersRoutes)
 app.use('/api/activity', activityRoutes)
 app.use('/api/resources', resourcesRoutes)
 app.use('/api/attachments', attachmentsRoutes)
+app.use('/api/mission-templates', missionTemplatesRoutes)
 
 // Error handler
 app.use(errorHandler)
@@ -61,6 +64,9 @@ async function start() {
     // Connect to MongoDB
     await connectMongo()
     console.log('MongoDB connected')
+
+    // Initialize system templates (Phase 10.2)
+    await MissionTemplate.initializeSystemTemplates()
 
     // Start listening
     app.listen(PORT, () => {

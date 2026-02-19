@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { missionsService, tasksService, attachmentsService, resourcesService } from '@/services/api'
+import { missionsService, tasksService, attachmentsService, resourcesService, templatesService } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
+import TaskDependencyGraph from '@/components/TaskDependencyGraph.vue'
 
 type MissionType = 'AUTO_ORCHESTRATED' | 'TEMPLATE_BASED' | 'MANUAL'
 
@@ -79,6 +80,7 @@ const showHumanResponseModal = ref(false)
 const showControlPanelModal = ref(false)
 const showFilesModal = ref(false)
 const showPlanPreviewModal = ref(false)  // NEW: Plan preview before orchestration
+const showDependencyGraphModal = ref(false)  // Phase 12.1: Dependency DAG modal
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -86,6 +88,8 @@ const orchestrating = ref(false)
 const submittingHumanResponse = ref(false)
 const selectedMission = ref<Mission | null>(null)
 const selectedHumanTask = ref<HumanTask | null>(null)
+const dependencyMissionId = ref<string | null>(null)  // Phase 12.1: Mission ID for DAG view
+const authToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') || 'hq-agent-token' : 'hq-agent-token'
 const missionTasks = ref<any[]>([])
 const orchestrationLog = ref<any[]>([])
 const humanResponse = ref('')
@@ -93,6 +97,11 @@ const missionAttachments = ref<UploadedFile[]>([])
 const createdMissionId = ref<string | null>(null)  // NEW: Store created mission ID
 const squadLeadPlan = ref<MissionPlan | null>(null)  // NEW: Store Squad Lead's plan
 const showAdditionalContext = ref(false)  // NEW: Toggle for additional context section
+
+// Phase 10.2: Mission Templates
+const templates = ref<any[]>([])
+const selectedTemplate = ref<any>(null)
+const loadingTemplates = ref(false)
 
 // Form data
 const formData = ref<{
@@ -112,7 +121,7 @@ const formData = ref<{
   title: '',
   description: '',
   objective: '',
-  missionType: 'AUTO_ORCHESTRATED',
+  missionType: 'AUTO_ORCHESTRATED' as MissionType,
   autoOrchestrate: false,
   templateId: undefined,
   context: '',
@@ -152,8 +161,42 @@ const fetchMissions = async () => {
   }
 }
 
+// Close create modal and reset form
+const closeCreateModal = () => {
+  showCreateModal.value = false
+  // Reset form data
+  formData.value = {
+    title: '',
+    description: '',
+    objective: '',
+    missionType: 'AUTO_ORCHESTRATED',
+    autoOrchestrate: false,
+    templateId: undefined,
+    context: '',
+    audience: '',
+    deliverableFormat: '',
+    successCriteria: '',
+    constraints: '',
+    tone: ''
+  }
+  selectedTemplate.value = null
+  showAdditionalContext.value = false
+}
+
+// Phase 12.1: Open dependency graph modal
+const openDependencyGraphModal = (missionId: string) => {
+  dependencyMissionId.value = missionId
+  showDependencyGraphModal.value = true
+}
+
 // Create mission
 const createMission = async () => {
+  // Phase 10.2: If template-based, use template flow
+  if (formData.value.missionType === 'TEMPLATE_BASED') {
+    await createMissionFromTemplate()
+    return
+  }
+
   try {
     submitting.value = true
 
@@ -175,7 +218,7 @@ const createMission = async () => {
     if (formData.value.tone) missionData.tone = formData.value.tone
 
     // For template-based missions, include template ID
-    if (formData.value.missionType === 'TEMPLATE_BASED' && formData.value.templateId) {
+    if ((formData.value.missionType as MissionType) === 'TEMPLATE_BASED' && formData.value.templateId) {
       missionData.templateId = formData.value.templateId
     }
 
@@ -218,6 +261,12 @@ const createMission = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+// Phase 12.1: Handle task click from DAG
+const handleTaskClickFromDAG = (node: any) => {
+  console.log('Task clicked from DAG:', node.title)
+  // Could navigate to task details or show more info
 }
 
 // Fetch mission plan from Squad Lead analysis
@@ -357,6 +406,72 @@ const fetchHumanTasks = async () => {
   }
 }
 
+// Phase 10.2: Mission Templates
+const fetchTemplates = async () => {
+  try {
+    loadingTemplates.value = true
+    const response = await templatesService.getAll()
+    templates.value = response.data
+  } catch (err) {
+    console.error('Error fetching templates:', err)
+  } finally {
+    loadingTemplates.value = false
+  }
+}
+
+const selectTemplate = (template: any) => {
+  selectedTemplate.value = template
+  formData.value.templateId = template.templateId
+
+  // Pre-fill form with template defaults
+  formData.value.context = template.context || ''
+  formData.value.audience = template.audience || ''
+  formData.value.deliverableFormat = template.deliverableFormat || ''
+  formData.value.successCriteria = template.successCriteria || ''
+  formData.value.constraints = template.constraints || ''
+  formData.value.tone = template.tone || ''
+}
+
+const createMissionFromTemplate = async () => {
+  if (!selectedTemplate.value) return
+
+  try {
+    submitting.value = true
+
+    // Extract parameters from template title placeholders
+    const params: Record<string, string> = {}
+    const matches = selectedTemplate.value.defaultTitle.match(/\{([^}]+)\}/g) || []
+    matches.forEach((match: string) => {
+      const key = match.substring(1, match.length - 1)
+      const value = prompt(`Ingresa valor para: ${key}`, key)
+      if (value) params[key] = value
+    })
+
+    const response = await templatesService.createMission(
+      selectedTemplate.value.templateId,
+      params
+    )
+
+    await fetchMissions()
+    closeCreateModal()
+
+    // Ask if user wants to orchestrate immediately
+    if (response.data.mission.status === 'draft') {
+      const shouldOrchestrate = confirm(
+        '✅ Misión creada desde plantilla.\n\n¿Deseas iniciar la orquestación automática ahora?'
+      )
+      if (shouldOrchestrate) {
+        await orchestrateMission(response.data.mission._id)
+      }
+    }
+  } catch (err) {
+    console.error('Error creating mission from template:', err)
+    alert('Error al crear misión desde plantilla')
+  } finally {
+    submitting.value = false
+  }
+}
+
 // Get human task for a mission
 const getHumanTaskForMission = (mission: Mission) => {
   if (!mission.awaitingHumanTaskId) return null
@@ -458,6 +573,7 @@ const submitHumanResponse = async () => {
 onMounted(() => {
   fetchMissions()
   fetchHumanTasks()
+  fetchTemplates()  // Phase 10.2: Load templates
 })
 </script>
 
@@ -592,6 +708,15 @@ onMounted(() => {
               title="Consolidar outputs en PDF"
             >
               📄 Consolidar
+            </button>
+
+            <!-- Dependency Graph Button (Phase 12.1) -->
+            <button
+              @click="openDependencyGraphModal(mission._id)"
+              class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm transition"
+              title="Ver grafo de dependencias"
+            >
+              🔗 DAG
             </button>
 
             <!-- Status Actions -->
@@ -823,6 +948,47 @@ onMounted(() => {
                 <div class="text-xs font-medium">Manual</div>
                 <div class="text-[10px] text-gray-500 mt-1">Tú defines las tareas</div>
               </button>
+            </div>
+          </div>
+
+          <!-- Phase 10.2: Template Selector (shown when TEMPLATE_BASED is selected) -->
+          <div v-if="formData.missionType === 'TEMPLATE_BASED'" class="mt-4">
+            <label class="block text-gray-400 text-sm mb-2">Seleccionar Plantilla *</label>
+            <div v-if="loadingTemplates" class="text-gray-500 text-sm py-4 text-center">
+              Cargando plantillas...
+            </div>
+            <div v-else-if="templates.length === 0" class="text-gray-500 text-sm py-4 text-center">
+              No hay plantillas disponibles
+            </div>
+            <div v-else class="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2">
+              <div
+                v-for="template in templates"
+                :key="template.templateId"
+                @click="selectTemplate(template)"
+                :class="[
+                  'p-3 rounded-lg border-2 cursor-pointer transition',
+                  selectedTemplate?.templateId === template.templateId
+                    ? 'bg-blue-600/20 border-blue-500'
+                    : 'bg-gray-700 border-gray-600 hover:border-gray-500'
+                ]"
+              >
+                <div class="flex items-start gap-2">
+                  <span class="text-xl">{{ template.icon }}</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-white truncate">{{ template.name }}</div>
+                    <div class="text-xs text-gray-400 truncate">{{ template.description }}</div>
+                    <div class="flex flex-wrap gap-1 mt-2">
+                      <span
+                        v-for="tag in template.tags.slice(0, 2)"
+                        :key="tag"
+                        class="text-[10px] px-1.5 py-0.5 bg-gray-600 rounded text-gray-300"
+                      >
+                        {{ tag }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1249,6 +1415,38 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 12.1: Dependency Graph Modal -->
+    <div v-if="showDependencyGraphModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-5xl border border-gray-700 flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <span>🔗</span>
+              Grafo de Dependencias
+            </h2>
+            <p class="text-gray-400 text-xs mt-1">Visualización de tareas y sus relaciones</p>
+          </div>
+          <button
+            @click="showDependencyGraphModal = false"
+            class="text-gray-400 hover:text-white text-2xl"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="p-4 flex-1 overflow-y-auto">
+          <TaskDependencyGraph
+            v-if="dependencyMissionId"
+            :mission-id="dependencyMissionId"
+            :token="authToken"
+            @task-click="handleTaskClickFromDAG"
+          />
         </div>
       </div>
     </div>

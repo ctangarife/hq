@@ -44,6 +44,12 @@ Este documento describe las características planificadas y mejoras futuras del 
   - Endpoints: GET /api/agents/:id/metrics, POST /api/agents/score, GET /api/agents/:id/score
   - Actualización automática de métricas al completar/fallar tareas
   - Orchestration usa scoring para seleccionar mejor agente
+- **Phase 10.2** ✅ - Plantillas de Misiones COMPLETO
+  - 6 plantillas del sistema (Análisis de Datos, Reporte PDF, Desarrollo, Investigación, Contenido, Automatización)
+  - Modelo MissionTemplate con configuración completa
+  - Endpoints: GET /api/mission-templates, POST /api/mission-templates, POST /mission-templates/from-template/:id
+  - Frontend: Selector visual de plantillas con iconos y tags
+  - Creación rápida de misiones con placeholders reemplazables
 
 ---
 
@@ -143,17 +149,32 @@ Este documento describe las características planificadas y mejoras futuras del 
 - Botones: Confirmar, Editar, Rechazar plan
 - Info contextual para cada tipo de misión
 
-#### 10.2 Plantillas de Misiones
-- [ ] Modelo `MissionTemplate.ts` con plantillas predefinidas:
+#### 10.2 Plantillas de Misiones ✅
+- [x] Modelo `MissionTemplate.ts` con plantillas predefinidas:
   - "Análisis de Datos"
   - "Generación de Reporte PDF"
   - "Desarrollo de Feature"
   - "Investigación Web"
-- [ ] Endpoint: `GET /api/mission-templates` - Listar plantillas
-- [ ] Endpoint: `POST /api/missions/from-template/:id` - Crear desde plantilla
-- [ ] UI: Selector de plantilla en creación de misión
+  - "Creación de Contenido"
+  - "Automatización de Procesos"
+- [x] Endpoint: `GET /api/mission-templates` - Listar plantillas
+- [x] Endpoint: `GET /api/mission-templates/:id` - Obtener plantilla
+- [x] Endpoint: `POST /api/mission-templates` - Crear plantilla custom
+- [x] Endpoint: `POST /api/mission-templates/from-template/:id` - Crear desde plantilla
+- [x] Endpoint: `PUT /api/mission-templates/:id` - Actualizar plantilla
+- [x] Endpoint: `DELETE /api/mission-templates/:id` - Eliminar plantilla
+- [x] Inicialización automática de plantillas del sistema al iniciar API
+- [x] UI: Selector de plantilla en creación de misión con iconos y tags
 
-**Archivos**: `api/src/models/MissionTemplate.ts`, `api/src/routes/mission-templates.ts`
+**Archivos**: `api/src/models/MissionTemplate.ts`, `api/src/routes/mission-templates.routes.ts`, `api/src/index.ts`, `data/frontend/src/services/api.ts`, `data/frontend/src/views/MissionsView.vue` ✅ Done
+
+**Cambios Implementados**:
+- Modelo MissionTemplate con campos para configuración completa de misión
+- 6 plantillas del sistema predefinidas (análisis, reportes, desarrollo, investigación, contenido, automatización)
+- Soporte para plantillas custom creadas por usuario
+- Frontend: Selector visual de plantillas con iconos, descripciones y tags
+- Creación rápida de misiones desde plantilla con placeholders
+- Pre-fill de campos de contexto desde plantilla seleccionada
 
 ---
 

@@ -808,12 +808,19 @@ curl -X POST http://localhost:3001/api/agents \
 - [x] Phase 8.1: Streaming de Outputs
 - [x] Phase 8.2: Consolidación de Outputs (PDF)
 - [x] Phase 9: Optimización de Asignación de Agentes
-- [ ] Phase 10: Mejoras de UX
+- [x] Phase 10: Mejoras de UX
 - [ ] Phase 11: Telegram Integration
+- [x] Phase 12.1: Task Dependencies DAG (Completed 2026-02-19)
+- [ ] Phase 12.2: Multi-Mission Orchestration
+- [ ] Phase 12.3: Aprendizaje Automático
+- [ ] Phase 12.4: Sandbox de Código
 
 Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 
-## Estado Actual (2026-02-18)
+**Documentación de Fases Recientes**:
+- [Phase 12.1: Task Dependencies DAG](./doc/PHASE_12_1_DAG.md) - Sistema de dependencias entre tareas con visualización de grafo
+
+## Estado Actual (2026-02-19)
 
 ### Funcionalidades Activas
 - ✅ OpenClaw-based agents con sincronización de credenciales desde MongoDB
@@ -828,8 +835,10 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 - ✅ **PDF Consolidation** - Generar entregables PDF consolidados desde outputs de tareas
 - ✅ **Agent Scoring System** - Asignación inteligente de agentes basada en rol, disponibilidad, historial de éxito y carga de trabajo
 - ✅ **Agent Metrics** - Métricas de rendimiento almacenadas y actualizadas automáticamente
+- ✅ **Mission Templates** - 6 plantillas predefinidas para creación rápida de misiones (Análisis, Reportes, Desarrollo, Investigación, Contenido, Automatización)
 - ✅ **File Management** - Subida y adjuntación de archivos a misiones
 - ✅ **Retry & Auditor System** - Reintentos automáticos y agente auditor inteligente
+- ✅ **Task Dependencies DAG** - Grafo de dependencias entre tareas con visualización, detección de ciclos, y análisis de camino crítico
 
 ### Templates de Agentes Disponibles
 
@@ -845,10 +854,11 @@ Ver roadmap completo en [doc/ROADMAP.md](./doc/ROADMAP.md)
 ### Agentes Deployados
 - **Cabezón** (Squad Lead) - Z.ai glm-4-plus - Listo para orquestar misiones
 
-### Próximos Pasos (Phase 10)
-1. **Plantillas de Misiones** - Misiones predefinidas para casos comunes (Análisis de Datos, Reportes PDF, Desarrollo, Investigación)
-2. **Telegram Integration** - Control del sistema HQ vía chat
-3. **Features Avanzadas** - Dependencias entre tareas, Multi-mission orquestation
+### Próximos Pasos (Phase 12.2+)
+1. **Multi-Mission Orchestration** - Coordinar múltiples misiones concurrentes
+2. **Aprendizaje Automático** - Mejora continua basada en resultados históricos
+3. **Sandbox de Código** - Ejecución segura de código generado por agentes
+4. **Telegram Integration** - Control del sistema HQ vía chat (deferrido al final)
 
 ## Troubleshooting
 
