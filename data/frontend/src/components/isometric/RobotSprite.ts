@@ -32,6 +32,17 @@ export class RobotSprite extends Container {
   // Animación
   private animTime: number = 0
 
+  // Sistema de movimiento
+  private isMoving: boolean = false
+  private movementStartTime: number = 0
+  private movementDuration: number = 800 // ms
+  private startX: number = 0
+  private startY: number = 0
+  private targetX: number = 0
+  private targetY: number = 0
+  private previousState: RobotState = 'idle'
+  private onMovementComplete: (() => void) | null = null
+
   constructor(_name: string, color: string | number = AGENT_COLORS.default) {
     super()
 
@@ -80,6 +91,30 @@ export class RobotSprite extends Container {
   set color(value: number) {
     this._color = value
     this.buildHead() // Redibujar cabeza con nuevo color
+  }
+
+  /**
+   * Animar movimiento hacia una posición
+   * @param x - Posición X destino
+   * @param y - Posición Y destino
+   * @param duration - Duración del movimiento en ms (default: 800)
+   * @param onComplete - Callback cuando termina el movimiento
+   */
+  animateTo(x: number, y: number, duration: number = 800, onComplete?: () => void): void {
+    // Guardar estado actual y posición inicial
+    this.previousState = this._state
+    this.startX = this.x
+    this.startY = this.y
+    this.targetX = x
+    this.targetY = y
+    this.movementDuration = duration
+    this.movementStartTime = performance.now()
+    this.onMovementComplete = onComplete || null
+
+    // Activar movimiento y estado walking
+    this.isMoving = true
+    this._state = 'walking'
+    this.updateAppearance()
   }
 
   /**
@@ -252,6 +287,11 @@ export class RobotSprite extends Container {
   private animate(ticker: Ticker): void {
     this.animTime = ticker.lastTime / 1000
 
+    // Manejar movimiento animado
+    if (this.isMoving) {
+      this.updateMovement()
+    }
+
     switch (this._state) {
       case 'idle':
         this.animateIdle()
@@ -269,6 +309,48 @@ export class RobotSprite extends Container {
         this.animateHappy()
         break
     }
+  }
+
+  /**
+   * Actualizar posición durante el movimiento
+   */
+  private updateMovement(): void {
+    const currentTime = performance.now()
+    const elapsed = currentTime - this.movementStartTime
+    const progress = Math.min(elapsed / this.movementDuration, 1)
+
+    // Función de easing easeOutCubic para movimiento suave
+    const easedProgress = this.easeOutCubic(progress)
+
+    // Interpolar posición
+    this.x = this.startX + (this.targetX - this.startX) * easedProgress
+    this.y = this.startY + (this.targetY - this.startY) * easedProgress
+
+    // Verificar si terminó el movimiento
+    if (progress >= 1) {
+      this.isMoving = false
+      this.x = this.targetX
+      this.y = this.targetY
+
+      // Restaurar estado anterior
+      this._state = this.previousState
+      this.updateAppearance()
+
+      // Ejecutar callback si existe
+      if (this.onMovementComplete) {
+        const callback = this.onMovementComplete
+        this.onMovementComplete = null
+        callback()
+      }
+    }
+  }
+
+  /**
+   * Función de easing easeOutCubic
+   * Empieza rápido y desacelera suavemente al final
+   */
+  private easeOutCubic(t: number): number {
+    return 1 - Math.pow(1 - t, 3)
   }
 
   private animateIdle(): void {
@@ -293,8 +375,11 @@ export class RobotSprite extends Container {
   }
 
   private animateError(): void {
-    const shake = (Math.random() - 0.5) * 4
-    this.x = shake
+    // Solo aplicar shake si no se está moviendo
+    if (!this.isMoving) {
+      const shake = (Math.random() - 0.5) * 4
+      this.x = this.targetX + shake // Usar targetX como base
+    }
   }
 
   private animateHappy(): void {

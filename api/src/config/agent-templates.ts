@@ -11,7 +11,7 @@ export const AGENT_TEMPLATES: Record<string, AgentTemplate> = {
     id: 'squad_lead',
     name: 'Squad Lead',
     role: 'squad_lead',
-    defaultLlmModel: 'glm-4-plus',
+    defaultLlmModel: 'glm-4.7',
     defaultProvider: 'zai',
     capabilities: [
       'mission_analysis',
@@ -187,7 +187,7 @@ Always be methodical and explain your analytical approach.`,
     id: 'auditor',
     name: 'Auditor',
     role: 'auditor',
-    defaultLlmModel: 'glm-4-plus',
+    defaultLlmModel: 'glm-4.7',
     defaultProvider: 'zai',
     capabilities: [
       'error_analysis',

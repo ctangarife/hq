@@ -252,9 +252,9 @@ onUnmounted(() => {
       <div class="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-gray-900 via-gray-900/95 to-transparent pointer-events-none">
         <header class="flex justify-between items-center">
           <div class="pointer-events-auto">
-            <h1 class="text-3xl font-bold text-white">🤖 HQ Command Center</h1>
+            <h1 class="text-3xl font-bold text-white">🍷 HQ Bar - Activity Hub</h1>
             <p class="text-gray-400 mt-1 flex items-center gap-2">
-              Vista isométrica de agentes - Orquestación en tiempo real
+              Watch your agents work at the bar
               <span v-if="connected" class="flex items-center gap-1 text-green-400 text-sm">
                 <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                 Live

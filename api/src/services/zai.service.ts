@@ -80,7 +80,7 @@ class ZaiService {
   async chatWithSystem(
     systemPrompt: string,
     userMessage: string,
-    model: string = 'glm-4-plus'
+    model: string = 'glm-4.7'
   ): Promise<string> {
     const messages: ZaiMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -97,7 +97,7 @@ class ZaiService {
    */
   async *chatStream(
     messages: ZaiMessage[],
-    model: string = 'glm-4-plus'
+    model: string = 'glm-4.7'
   ): AsyncGenerator<string> {
     try {
       const response = await this.client.post(
@@ -138,7 +138,8 @@ class ZaiService {
    */
   getAvailableModels(): string[] {
     return [
-      'glm-4-plus',      // Most capable model
+      'glm-4.7',         // Most capable model (default)
+      'glm-4-plus',      // Enhanced model
       'glm-4-air',       // Balanced model
       'glm-4-flash',     // Fast model
       'glm-4-flashx',    // Ultra fast model
@@ -152,7 +153,7 @@ class ZaiService {
   async validateApiKey(): Promise<boolean> {
     try {
       await this.chat({
-        model: 'glm-4-flash',
+        model: 'glm-4.7',
         messages: [{ role: 'user', content: 'test' }],
         max_tokens: 1
       })

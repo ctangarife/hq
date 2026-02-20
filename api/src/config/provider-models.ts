@@ -336,7 +336,7 @@ export function getModelInfo(providerId: string, modelId: string): ModelInfo | n
  */
 export function getDefaultModel(providerId: string): string {
   const defaults: Record<string, string> = {
-    zai: 'glm-4',
+    zai: 'glm-4.7',
     minimax: 'MiniMax-M2.1',
     anthropic: 'claude-3-5-sonnet-20241022',
     openai: 'gpt-4o-mini',

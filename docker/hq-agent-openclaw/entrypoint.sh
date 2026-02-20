@@ -19,7 +19,7 @@ LLM_MODEL="${LLM_MODEL:-glm-4.7}"
 CONFIG_DIR="${OPENCLAW_CONFIG_DIR:-/home/node/.openclaw}"
 CONFIG_FILE="${CONFIG_DIR}/openclaw.json"
 
-echo "📡 MongoDB URI: ${MONGO_URI}"
+# echo "📡 MongoDB URI: ${MONGO_URI}"
 echo "🤖 Agente: ${AGENT_NAME} (${AGENT_ROLE})"
 echo "🔗 HQ API: ${HQ_API_URL}"
 
@@ -116,9 +116,10 @@ if [ "$(id -u)" = "0" ]; then
   config.models.mode = 'merge';
   config.models.providers = config.models.providers || {};
 
-  // Z.ai provider (OpenAI-compatible) - sin campo 'api'
+  // Z.ai provider - usa API Anthropic Messages
   config.models.providers.zai = {
-    baseUrl: 'https://api.z.ai/api/anthropic/chat/completions',
+    baseUrl: 'https://api.z.ai/api/anthropic',
+    api: 'anthropic-messages',
     models: [
       { id: 'glm-4.7', name: 'GLM-4.7', contextWindow: 128000 },
       { id: 'glm-4.7-flash', name: 'GLM-4.7 Flash', contextWindow: 128000 },
@@ -128,9 +129,10 @@ if [ "$(id -u)" = "0" ]; then
     ]
   };
 
-  // MiniMax provider (OpenAI-compatible) - uses different model names than native API
+  // MiniMax provider - usa API Anthropic Messages
   config.models.providers.minimax = {
-    baseUrl: 'https://api.minimax.io/v1/chat/completions',
+    baseUrl: 'https://api.minimax.io/anthropic',
+    api: 'anthropic-messages',
     models: [
       { id: 'MiniMax-M2.5', name: 'MiniMax M2.5', contextWindow: 204800 },
       { id: 'MiniMax-M2.1', name: 'MiniMax M2.1', contextWindow: 204800 },

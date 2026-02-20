@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { Application, Container, Graphics, Text } from 'pixi.js'
 import { RobotSprite, AGENT_COLORS } from './RobotSprite'
+import { FurnitureDrawer } from './FurnitureDrawer'
 
 interface Agent {
   _id: string
@@ -42,6 +43,8 @@ const emit = defineEmits<{
 const canvasContainer = ref<HTMLDivElement>()
 let app: Application | null = null
 let mapContainer: Container | null = null
+let floorContainer: Container | null = null
+let furnitureContainer: Container | null = null
 const robotSprites = new Map<string, RobotSprite>()
 
 // Zonas del mapa HQ - actualizadas para los tres estados de trabajo
@@ -95,7 +98,23 @@ async function initPixi() {
   mapContainer.y = app.canvas.height / 2
   app.stage.addChild(mapContainer)
 
+  // Create floor container (bottom layer - z-index 0)
+  floorContainer = new Container()
+  mapContainer.addChild(floorContainer)
+
+  // Draw floor
+  drawFloor()
+
+  // Draw zones (on top of floor)
   drawZones()
+
+  // Create furniture container (middle layer - z-index 1)
+  furnitureContainer = new Container()
+  mapContainer.addChild(furnitureContainer)
+
+  // Draw furniture
+  drawFurniture()
+
   updateAgentSprites()
 
   mapContainer.scale.set(0.8)
@@ -188,6 +207,33 @@ function drawZones() {
       mapContainer.addChild(g)
     }
   })
+}
+
+function drawFloor() {
+  if (!floorContainer) return
+
+  const floorWidth = 800
+  const floorHeight = 600
+
+  const g = new Graphics()
+  const drawer = new FurnitureDrawer(g)
+
+  // Draw wood floor centered
+  drawer.drawWoodFloor(floorWidth, floorHeight)
+
+  floorContainer.addChild(g)
+}
+
+function drawFurniture() {
+  if (!furnitureContainer) return
+
+  const g = new Graphics()
+  const drawer = new FurnitureDrawer(g)
+
+  // Draw the complete bar scene with all furniture
+  drawer.drawBarScene()
+
+  furnitureContainer.addChild(g)
 }
 
 function getAgentsInZone(zoneId: string): Agent[] {
@@ -285,16 +331,35 @@ function updateAgentSprites() {
 
       sprite.x = newPos.x
       sprite.y = newPos.y
+      sprite.state = getRobotState(agent)
 
       if (mapContainer) {
         mapContainer.addChild(sprite)
       }
       robotSprites.set(agent._id, sprite)
     } else {
-      // Animar hacia nueva posición
-      sprite.x = newPos.x
-      sprite.y = newPos.y
-      sprite.state = getRobotState(agent)
+      // Verificar si la posición cambió significativamente
+      const dx = newPos.x - sprite.x
+      const dy = newPos.y - sprite.y
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      // Si la distancia es mayor a 10px, animar el movimiento
+      if (distance > 10) {
+        const targetState = getRobotState(agent)
+        const currentSprite = sprite // Capturar para uso en callback
+        currentSprite.animateTo(
+          newPos.x,
+          newPos.y,
+          800, // 800ms de duración
+          () => {
+            // Callback cuando termina el movimiento
+            currentSprite.state = targetState
+          }
+        )
+      } else {
+        // Posición no cambió significativamente, solo actualizar estado
+        sprite.state = getRobotState(agent)
+      }
     }
   })
 }
@@ -327,6 +392,16 @@ onUnmounted(() => {
 
   robotSprites.forEach(sprite => sprite.destroy())
   robotSprites.clear()
+
+  if (floorContainer) {
+    floorContainer.destroy()
+    floorContainer = null
+  }
+
+  if (furnitureContainer) {
+    furnitureContainer.destroy()
+    furnitureContainer = null
+  }
 
   if (app) {
     app.destroy(true)

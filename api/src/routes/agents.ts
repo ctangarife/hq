@@ -52,7 +52,7 @@ router.post('/', async (req, res, next) => {
       name: req.body.name,
       role: req.body.role,
       personality: req.body.personality,
-      llmModel: req.body.llmModel || 'glm-4',
+      llmModel: req.body.llmModel || 'glm-4.7',
       provider: req.body.provider || 'zai',
       apiKey: req.body.apiKey,
       capabilities: req.body.capabilities || [],

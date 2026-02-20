@@ -14,7 +14,7 @@ if [ -z "$MONGO_URI" ] && [ -n "$MONGODB_USERNAME" ] && [ -n "$MONGODB_PASSWORD"
 fi
 HQ_API_URL="${HQ_API_URL:-http://api:3001/api}"
 
-echo "📡 MongoDB URI: ${MONGO_URI}"
+# echo "📡 MongoDB URI: ${MONGO_URI}"
 
 # Función para generar y cargar variables de entorno
 load_and_export_keys() {

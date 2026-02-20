@@ -45,7 +45,7 @@ const getApiKey = (provider) => {
 // Endpoints de LLM providers
 const providers = {
   zai: {
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    baseUrl: 'https://api.z.ai/api/anthropic',
     getHeaders: (apiKey) => ({
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`

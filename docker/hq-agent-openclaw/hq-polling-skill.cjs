@@ -21,21 +21,44 @@ const config = {
   hqApiUrl: process.env.HQ_API_URL || 'http://api:3001/api',
   hqApiToken: process.env.HQ_API_TOKEN || 'hq-agent-token',
   pollInterval: parseInt(process.env.POLL_INTERVAL || '5000', 10),
+  // OpenClaw gateway configuration
+  openclawGatewayUrl: process.env.OPENCLAW_GATEWAY_URL || 'http://localhost:3000',
+  openclawToken: process.env.OPENCLAW_TOKEN || 'hq-local-token',
 };
 
 // LLM Providers configuration
 const providers = {
   zai: {
-    baseUrl: 'https://api.z.ai/api/anthropic/chat/completions',
+    baseUrl: 'https://api.z.ai/api/anthropic',
     getHeaders: (apiKey) => ({
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`
     }),
-    formatPayload: (model, messages) => ({
-      model,
-      messages,
-      stream: false
-    })
+    formatPayload: (model, messages) => {
+      // Z.ai usa formato compatible con Anthropic
+      // Extraer system message si existe
+      let systemMessage = '';
+      const userMessages = messages.filter(m => {
+        if (m.role === 'system') {
+          systemMessage = m.content;
+          return false;
+        }
+        return true;
+      });
+
+      const payload = {
+        model,
+        messages: userMessages,
+        max_tokens: 4096,
+        stream: false
+      };
+
+      if (systemMessage) {
+        payload.system = systemMessage;
+      }
+
+      return payload;
+    }
   },
 
   minimax: {
@@ -84,15 +107,12 @@ class HQPollingSkill {
   constructor() {
     this.running = false;
     this.currentTask = null;
-    this.provider = providers[config.llmProvider];
-    if (!this.provider) {
-      throw new Error(`Unsupported provider: ${config.llmProvider}`);
-    }
+    // Load API key from auth-profiles.json
     this.apiKey = getApiKey(config.llmProvider);
     if (!this.apiKey) {
       throw new Error(`No API key found for provider: ${config.llmProvider}`);
     }
-    console.log(`✅ API Key configurada para ${config.llmProvider}`);
+    console.log(`✅ API Key configurada para ${config.llmProvider} (desde auth-profiles.json)`);
   }
 
   async sleep(ms) {
@@ -304,21 +324,83 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
   }
 
   async callLLM(messages) {
-    const payload = this.provider.formatPayload(config.llmModel, messages);
-    const headers = this.provider.getHeaders(this.apiKey);
+    // Z.ai uses Anthropic Messages API format
+    const baseUrl = 'https://api.z.ai/api/anthropic';
+    const apiUrl = `${baseUrl}/v1/messages`;
 
-    const response = await fetch(this.provider.baseUrl, {
+    console.log('🔍 Using Z.ai Anthropic Messages API');
+    console.log('🔍 Model:', config.llmModel);
+    console.log('🔍 API URL:', apiUrl);
+    console.log('🔍 Messages:', messages.length);
+
+    // Extract system message and build messages array
+    let systemMessage = '';
+    const apiMessages = [];
+
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        systemMessage = msg.content;
+      } else if (msg.role === 'user' || msg.role === 'assistant') {
+        apiMessages.push({
+          role: msg.role,
+          content: msg.content
+        });
+      }
+    }
+
+    // Build payload for Anthropic Messages API
+    const payload = {
+      model: config.llmModel,
+      max_tokens: 4096,
+      messages: apiMessages
+    };
+
+    // Add system message if present
+    if (systemMessage) {
+      payload.system = systemMessage;
+    }
+
+    console.log('🔍 Request payload:', JSON.stringify(payload, null, 2).substring(0, 800));
+
+    // Call Z.ai API with Anthropic format
+    const response = await fetch(apiUrl, {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
       body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`LLM error ${response.status}: ${error}`);
+      console.error('❌ Z.ai API error:', error);
+      throw new Error(`Z.ai API error ${response.status}: ${error}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log('🔍 Z.ai Response structure:', JSON.stringify(result, null, 2).substring(0, 1500));
+
+    // Extract content from Anthropic response format
+    // Anthropic returns: { content: [{ type: "text", text: "..." }] }
+    if (result.content && Array.isArray(result.content)) {
+      const textBlock = result.content.find(block => block.type === 'text');
+      if (textBlock && textBlock.text) {
+        console.log('🔍 Extracted text length:', textBlock.text.length);
+        // Return in OpenAI-like format for consistency
+        return {
+          choices: [{
+            message: {
+              content: textBlock.text
+            }
+          }]
+        };
+      }
+    }
+
+    console.error('❌ Unknown response format, keys:', Object.keys(result));
+    throw new Error('Unknown Z.ai response format: ' + JSON.stringify(result).substring(0, 200));
   }
 
   async executeTaskWithLLM(task) {
