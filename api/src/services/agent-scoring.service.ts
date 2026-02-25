@@ -1,5 +1,6 @@
 import Agent from '../models/Agent.js'
 import Task from '../models/Task.js'
+import { findAgentByIdOrContainerId } from '../utils/agent-helpers.js'
 
 /**
  * Agent Scoring Service
@@ -273,7 +274,7 @@ class AgentScoringService {
    * Actualizar métricas de un agente después de completar una tarea
    */
   async updateAgentMetrics(agentId: string, taskStatus: 'completed' | 'failed', duration: number): Promise<void> {
-    const agent = await Agent.findById(agentId)
+    const agent = await findAgentByIdOrContainerId(agentId)
 
     if (!agent) {
       console.warn(`Agent ${agentId} not found for metrics update`)

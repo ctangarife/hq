@@ -10,6 +10,7 @@ import { taskEventsService } from '../services/task-events.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
 import { agentScoringService } from '../services/agent-scoring.service.js'
 import { taskDependenciesService } from '../services/dependencies.service.js'
+import { findAgentByIdOrContainerId, getContainerId } from '../utils/agent-helpers.js'
 
 const router = Router()
 
@@ -209,7 +210,7 @@ router.get('/agent/:agentId/next', async (req, res, next) => {
     const { missionId } = req.query
 
     // Find the agent to get containerId
-    const agent = await Agent.findById(agentId)
+    const agent = await findAgentByIdOrContainerId(agentId)
     let containerId = agentId // Default to using agentId as is
 
     if (agent && agent.containerId) {
@@ -526,11 +527,19 @@ router.post('/:id/human-response', async (req, res, next) => {
     }
 
     // Create a new Squad Lead task with the human's answers
-    // This task will contain the human's response as context
+    // This task will contain the human's response as context PLUS the original mission info
     const resumeTask = new Task({
       missionId: parentTask.missionId,
       title: `Resume Mission Analysis with Human Input`,
-      description: `Continue mission analysis with the following human input:\n\n${response}`,
+      description: `Analiza esta misión con la información adicional proporcionada por el humano:
+
+Título de la misión original: ${parentTask.title}
+Descripción de la misión original: ${parentTask.description || 'Sin descripción'}
+
+INFORMACIÓN ADICIONAL DEL HUMANO:
+${response}
+
+Con esta información adicional, crea el plan de ejecución JSON.`,
       type: 'mission_analysis',
       assignedTo: parentTask.assignedTo,
       status: 'pending',

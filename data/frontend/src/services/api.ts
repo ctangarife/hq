@@ -31,6 +31,7 @@ export const missionsService = {
   resume: (id: string) => api.post(`/missions/${id}/resume`),
   cancel: (id: string, reason?: string) => api.post(`/missions/${id}/cancel`, { reason }),
   complete: (id: string) => api.post(`/missions/${id}/complete`),
+  restart: (id: string) => api.post(`/missions/${id}/restart`),
   getProgress: (id: string) => api.get(`/missions/${id}/progress`),
   getTimeline: (id: string) => api.get(`/missions/${id}/timeline`)
 }

@@ -5,6 +5,7 @@ import { getModelInfo, getProviderModels } from '../config/provider-models.js'
 import * as agentsMetricsService from '../services/agents-metrics.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
 import { agentScoringService } from '../services/agent-scoring.service.js'
+import { findAgentByIdOrContainerId } from '../utils/agent-helpers.js'
 
 const router = Router()
 
@@ -21,7 +22,7 @@ router.get('/', async (req, res, next) => {
 // GET /api/agents/:id - Get agent by ID
 router.get('/:id', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -109,7 +110,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     // Get current agent BEFORE updating to detect changes
-    const currentAgent = await Agent.findById(req.params.id)
+    const currentAgent = await findAgentByIdOrContainerId(req.params.id)
     if (!currentAgent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -131,11 +132,15 @@ router.put('/:id', async (req, res, next) => {
     }
 
     // Update agent in MongoDB
-    const updatedAgent = await Agent.findByIdAndUpdate(
-      req.params.id,
-      { $set: req.body },
-      { new: true, runValidators: true }
-    )
+    // Note: We can't use findByIdAndUpdate with containerId, so we do it manually
+    const agentToUpdate = await findAgentByIdOrContainerId(req.params.id)
+    if (!agentToUpdate) {
+      return res.status(404).json({ error: 'Agent not found' })
+    }
+
+    // Apply updates
+    Object.assign(agentToUpdate, req.body)
+    const updatedAgent = await agentToUpdate.save()
 
     // Auto-recreate container if provider/model changed and agent has a container
     let containerRecreated = false
@@ -208,7 +213,7 @@ router.put('/:id', async (req, res, next) => {
 // DELETE /api/agents/:id - Delete agent and remove container
 router.delete('/:id', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -238,7 +243,7 @@ router.delete('/:id', async (req, res, next) => {
 // POST /api/agents/:id/deploy - Redeploy agent container
 router.post('/:id/deploy', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -290,7 +295,7 @@ router.post('/:id/deploy', async (req, res, next) => {
 // POST /api/agents/:id/stop - Stop agent container
 router.post('/:id/stop', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -315,7 +320,7 @@ router.post('/:id/stop', async (req, res, next) => {
 // POST /api/agents/:id/start - Start agent container
 router.post('/:id/start', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -340,7 +345,7 @@ router.post('/:id/start', async (req, res, next) => {
 // GET /api/agents/:id/logs - Get agent container logs (parsed)
 router.get('/:id/logs', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -367,7 +372,7 @@ router.get('/:id/logs', async (req, res, next) => {
 // GET /api/agents/:id/logs/stream - Stream agent container logs (SSE)
 router.get('/:id/logs/stream', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -410,7 +415,7 @@ router.get('/:id/logs/stream', async (req, res, next) => {
 // GET /api/agents/:id/status - Get agent container status
 router.get('/:id/status', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -453,7 +458,7 @@ router.get('/:id/status', async (req, res, next) => {
 // DELETE /api/agents/:id/container - Destroy agent container only
 router.delete('/:id/container', async (req, res, next) => {
   try {
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }
@@ -557,7 +562,7 @@ router.get('/:id/score', async (req, res, next) => {
   try {
     const { taskType, requiredCapabilities, missionId } = req.query
 
-    const agent = await Agent.findById(req.params.id)
+    const agent = await findAgentByIdOrContainerId(req.params.id)
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' })
     }

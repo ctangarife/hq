@@ -407,22 +407,22 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
     const messages = [
       {
         role: 'system',
-        content: `You are ${config.agentName}, ${config.agentRole}. Respond concisely and helpfully.`
+        content: `Eres ${config.agentName}, ${config.agentRole}. Responde SIEMPRE en español de forma concisa y útil.`
       }
     ];
 
     // Build prompt for the task
-    let prompt = `# Task: ${task.title}\n\n`;
+    let prompt = `# Tarea: ${task.title}\n\n`;
 
     if (task.description) {
-      prompt += `Description: ${task.description}\n\n`;
+      prompt += `Descripción: ${task.description}\n\n`;
     }
 
     if (task.input && Object.keys(task.input).length > 0) {
-      prompt += `Input Data:\n${JSON.stringify(task.input, null, 2)}\n\n`;
+      prompt += `Datos de entrada:\n${JSON.stringify(task.input, null, 2)}\n\n`;
     }
 
-    prompt += `Please execute this task and report the result.`;
+    prompt += `Por favor ejecuta esta tarea y reporta el resultado en español.`;
 
     messages.push({ role: 'user', content: prompt });
 
@@ -447,83 +447,8 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
       }
     }
 
-    // Check if the response is asking for more information (human input)
-    // This applies to ALL task types, not just mission_analysis
-    const isQuestionResponse =
-      (content.includes('?') || content.includes('¿')) ||
-      (content.length < 500 && (
-        content.toLowerCase().includes('necesito') ||
-        content.toLowerCase().includes('need') ||
-        content.toLowerCase().includes('clarify') ||
-        content.toLowerCase().includes('more information') ||
-        content.toLowerCase().includes('what is') ||
-        content.toLowerCase().includes('cuál') ||
-        content.toLowerCase().includes('qué') ||
-        content.toLowerCase().includes('por favor') ||
-        content.toLowerCase().includes('favor de') ||
-        content.toLowerCase().includes('provide')
-      ));
-
-    if (isQuestionResponse) {
-      console.log('❓ Task response is asking for more information - creating human input task');
-      // For non-mission_analysis tasks, we can't use handleNeedsHumanInfo directly
-      // because it expects specific structure. Let's create a simpler version.
-      const humanTaskResponse = await fetch(`${config.hqApiUrl}/tasks`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.hqApiToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          title: `Responder: ${task.title}`,
-          description: `El agente necesita información:\n\n${content}\n\nPor favor responde para continuar.`,
-          type: 'human_input',
-          status: 'pending',
-          missionId: task.missionId,
-          input: {
-            parentTaskId: task._id,
-            agentId: config.agentId
-          }
-        })
-      });
-
-      if (humanTaskResponse.ok) {
-        const humanTask = await humanTaskResponse.json();
-        console.log(`✅ Tarea humana creada: ${humanTask._id}`);
-
-        // Mark current task as awaiting human response
-        await fetch(`${config.hqApiUrl}/tasks/${task._id}/status`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.hqApiToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            status: 'awaiting_human_response',
-            output: { success: true, result: { questions: content, needsHumanInput: true } }
-          })
-        });
-
-        // Update mission if exists
-        if (task.missionId) {
-          await fetch(`${config.hqApiUrl}/missions/${task.missionId}`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${config.hqApiToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              awaitingHumanTaskId: humanTask._id
-            })
-          });
-        }
-
-        return content; // Return the questions content
-      } else {
-        console.error('Failed to create human task');
-      }
-    }
-
+    // Simply return the content - question detection is handled elsewhere
+    // (in executeMissionAnalysis for squad lead tasks)
     return content;
   }
 
@@ -551,21 +476,13 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
       console.log(result);
       console.log('');
 
-      // Check if result indicates human input was requested
-      // executeTaskWithLLM returns the content directly, and if it created a human task,
-      // the task was already marked as awaiting_human_response there
-      const isAwaitingHuman = result &&
-        (result.includes('?') || result.includes('¿')) &&
-        result.length < 500;
-
-      if (!isAwaitingHuman) {
-        // Only complete the task if not waiting for human input
-        await this.completeTask(task._id, {
-          success: true,
-          result,
-          duration: Date.now() - startTime
-        });
-      }
+      // Complete the task with the result
+      // Note: executeTaskWithLLM handles human input detection internally if needed
+      await this.completeTask(task._id, {
+        success: true,
+        result,
+        duration: Date.now() - startTime
+      });
 
       return true;
     } catch (error) {
@@ -583,54 +500,52 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
   async executeMissionAnalysis(task, startTime) {
     console.log('🎯 Ejecutando análisis de misión (Squad Lead)...');
 
-    const messages = [
-      {
-        role: 'system',
-        content: `You are a Squad Lead agent. Your job is to analyze missions and create execution plans.
+    // Check if this is a resume task (with human input)
+    const isResumeTask = task.input?.humanResponse || task.input?.originalTaskId;
+    console.log('📋 ¿Es tarea de resume con input humano?', isResumeTask ? 'SÍ' : 'NO');
 
-CRITICAL RULES:
-1. If the mission description is generic, vague, or lacks specific details (like "tarea inicial", "planificar", "analizar"), you MUST ASK QUESTIONS instead of creating a plan.
-2. ONLY create a JSON plan when you have specific, actionable information about what needs to be built/done.
-3. Generic descriptions like "tarea inicial" or "analizar" are NOT enough - you need more context.
-4. When in doubt, ALWAYS ASK QUESTIONS first.
+    let systemPrompt = '';
+    let userPrompt = '';
 
-When asking questions, use plain text (NOT JSON). List clearly what information you need.
+    if (isResumeTask) {
+      // For resume tasks, FORCE the Squad Lead to create a plan
+      systemPrompt = `Eres un agente Squad Lead. Tu trabajo es analizar misiones y crear planes de ejecución.
 
-When you have SPECIFIC details (what to build, specific requirements, clear objectives), create a JSON plan.`
-      },
-      {
-        role: 'user',
-        content: `Analyze this mission:
+IMPORTANTE: Ya recibiste información adicional del humano. DEBES crear un plan JSON ahora.
 
-Title: ${task.title}
-Description: ${task.description || ''}
+NO hagas más preguntas. La información que tienes es SUFICIENTE.
 
-Available Agent Templates:
+REGLAS PARA ESTA TAREA:
+1. DEBES crear un plan JSON válido
+2. NO hagas más preguntas
+3. Usa la información proporcionada por el humano
+4. Responde SIEMPRE en español
+
+Crea el plan JSON con la siguiente información.`;
+
+      userPrompt = `Analiza esta misión con la información adicional del humano:
+
+Título: ${task.title}
+Descripción: ${task.description || ''}
+
+Plantillas de agentes disponibles:
 - researcher: web_search, data_analysis, fact_checking
 - developer: code_execution, code_review, debugging
 - writer: content_generation, editing, documentation
 - analyst: data_analysis, statistics, reporting
 
-First, determine if you have ENOUGH SPECIFIC information:
-- If the title/description is generic (like "tarea inicial", "analizar", "planificar") → ASK QUESTIONS
-- If you don't know WHAT to build/do specifically → ASK QUESTIONS
-- If you lack requirements, constraints, or deliverables → ASK QUESTIONS
+DEBES crear un plan JSON ahora. NO hagas preguntas.
 
-If you need more information, respond with questions like:
-- "¿Cuál es el objetivo específico del proyecto?"
-- "¿Qué requisitos funcionales deben cumplirse?"
-- "¿Qué tecnologías o herramientas se deben usar?"
-
-ONLY when you have specific, actionable details, create a JSON plan:
+Formato del plan JSON:
 {
   "complexity": "low|medium|high|critical",
-  "summary": "Brief summary",
+  "summary": "Breve resumen",
   "estimatedDuration": 123,
   "tasks": [
     {
       "id": "task-1",
-      "title": "Task title",
-      "description": "What needs to be done",
+      "title": "Título de la tarea",
+      "description": "Qué se debe hacer",
       "type": "web_search|data_analysis|content_generation|code_execution|custom",
       "dependencies": [],
       "priority": "high|medium|low",
@@ -640,12 +555,48 @@ ONLY when you have specific, actionable details, create a JSON plan:
   "agents": [
     {
       "id": "agent-1",
-      "name": "Agent name",
+      "name": "Nombre del agente",
       "role": "researcher|developer|writer|analyst",
       "capabilities": ["capability1"]
     }
   ]
-}`
+}`;
+    } else {
+      // For initial mission analysis, use a TWO-STEP approach
+      // Step 1: Ask if there's enough info (simple YES/NO question)
+      systemPrompt = `Eres un analista que revisa si hay información suficiente para crear un plan de trabajo.
+
+TU ÚNICA FUNCIÓN: Determinar si la información dada es suficiente para crear tareas específicas.
+
+REGLAS:
+1. Responde SOLO "NEED_INFO" si falta información
+2. Responde SOLO "CREATE_PLAN" si hay información suficiente
+
+NO generes contenido. NO expliques. SOLO una de las dos palabras.`;
+
+      userPrompt = `Analiza esta misión:
+
+Título: ${task.title}
+Descripción: ${task.description || ''}
+
+PREGUNTA: ¿Es suficiente esta información para crear tareas específicas?
+
+- "Dar una charla" sin tema específico → NEED_INFO
+- "Generar contenido para evento" sin detalles → NEED_INFO
+- "Crear una charla sobre Python para principiantes" → CREATE_PLAN
+- "Investigar X y generar Y" → CREATE_PLAN
+
+Responde SOLO "NEED_INFO" o "CREATE_PLAN":`;
+    }
+
+    const messages = [
+      {
+        role: 'system',
+        content: systemPrompt
+      },
+      {
+        role: 'user',
+        content: userPrompt
       }
     ];
 
@@ -657,84 +608,214 @@ ONLY when you have specific, actionable details, create a JSON plan:
       console.log(content);
       console.log('');
 
-      // First, check if response contains questions (before trying JSON parsing)
-      // Signs that this is a request for more information:
-      // - Contains question marks
-      // - Short response (< 300 chars)
-      // - Contains keywords like "need", "clarify", "more information"
-      const isQuestionResponse =
-        (content.includes('?') || content.includes('¿')) ||
-        (content.length < 300 && (
-          content.toLowerCase().includes('necesito') ||
-          content.toLowerCase().includes('need') ||
-          content.toLowerCase().includes('clarify') ||
-          content.toLowerCase().includes('more information') ||
-          content.toLowerCase().includes('what is') ||
-          content.toLowerCase().includes('cuál') ||
-          content.toLowerCase().includes('qué') ||
-          content.toLowerCase().includes('por favor')
-        ));
+      // Handle TWO-STEP approach for initial analysis
+      const isResumeTask = task.input?.humanResponse || task.input?.originalTaskId;
 
-      if (isQuestionResponse) {
-        console.log('❓ Squad Lead is asking for more information');
-        return await this.handleNeedsHumanInfo(task, content, startTime);
+      if (!isResumeTask) {
+        // Step 1: Check if response is NEED_INFO or CREATE_PLAN
+        const cleanContent = content.trim().toUpperCase();
+
+        if (cleanContent.includes('NEED_INFO') || cleanContent.includes('NECESITA_MAS_INFO')) {
+          // Generate predefined questions based on mission type
+          const questions = this.generateQuestionsForMission(task);
+
+          const formattedQuestions = `🙋 El Squad Lead necesita más información para continuar:
+
+${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+💬 Por favor responde estas preguntas para que el Squad Lead pueda generar el plan de ejecución.`;
+
+          return await this.handleNeedsHumanInfo(task, formattedQuestions, startTime);
+        }
+
+        if (cleanContent.includes('CREATE_PLAN') || cleanContent.includes('CREAR_PLAN')) {
+          // Step 2: Generate the full plan with a second call
+          console.log('📋 Información suficiente, generando plan completo...');
+
+          const planPrompt = `Crea un plan de ejecución detallado para esta misión:
+
+Título: ${task.title}
+Descripción: ${task.description || ''}
+
+Genera un JSON con este formato:
+{
+  "needsMoreInfo": false,
+  "complexity": "low|medium|high|critical",
+  "summary": "Breve resumen del enfoque",
+  "estimatedDuration": 123,
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Título de la tarea",
+      "description": "Descripción específica de qué hacer",
+      "type": "web_search|data_analysis|content_generation|code_execution|custom",
+      "dependencies": [],
+      "priority": "high|medium|low",
+      "assignedAgentRole": "researcher|developer|writer|analyst"
+    }
+  ],
+  "agents": [
+    {
+      "id": "agent-1",
+      "name": "Nombre del agente",
+      "role": "researcher|developer|writer|analyst",
+      "capabilities": ["capability1", "capability2"]
+    }
+  ]
+}`;
+
+          const secondResult = await this.callLLM([
+            { role: 'system', content: 'Eres un Squad Lead experto. Genera planes de ejecución en JSON válido. Responde en español.' },
+            { role: 'user', content: planPrompt }
+          ]);
+
+          const secondContent = secondResult.choices?.[0]?.message?.content || secondResult.content || content;
+
+          // Try to parse the second response
+          try {
+            jsonOutput = JSON.parse(secondContent);
+          } catch (e) {
+            const jsonMatch = secondContent.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+            if (jsonMatch) {
+              jsonOutput = JSON.parse(jsonMatch[1]);
+            } else {
+              const objectMatch = secondContent.match(/\{[\s\S]*\}/);
+              if (objectMatch) {
+                jsonOutput = JSON.parse(objectMatch[0]);
+              } else {
+                throw new Error('Failed to generate plan from second call: ' + secondContent.substring(0, 200));
+              }
+            }
+          }
+
+          // Continue to validation below
+        } else {
+          // Fall through to original JSON parsing
+        }
       }
 
-      // Try to parse as JSON
+      // FIRST: Try to parse as JSON (Squad Lead should always return JSON for mission analysis)
       let jsonOutput;
+      let parseError = null;
+
       try {
         jsonOutput = JSON.parse(content);
       } catch (e) {
         // Try to extract JSON from markdown code blocks
         const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
         if (jsonMatch) {
-          jsonOutput = JSON.parse(jsonMatch[1]);
+          try {
+            jsonOutput = JSON.parse(jsonMatch[1]);
+          } catch (e2) {
+            parseError = e2;
+          }
         } else {
           // Try to find any JSON object in the response
           const objectMatch = content.match(/\{[\s\S]*\}/);
           if (objectMatch) {
-            jsonOutput = JSON.parse(objectMatch[0]);
+            try {
+              jsonOutput = JSON.parse(objectMatch[0]);
+            } catch (e3) {
+              parseError = e3;
+            }
           } else {
-            throw new Error('Squad Lead did not return valid JSON or questions. Response was: ' + content.substring(0, 200));
+            parseError = e;
           }
         }
       }
 
-      // Validate structure - MUST have tasks array
-      if (!jsonOutput.tasks || !Array.isArray(jsonOutput.tasks)) {
-        throw new Error('Invalid JSON: Missing or invalid "tasks" array. Got: ' + JSON.stringify(jsonOutput));
+      // If JSON parsing succeeded, validate and process
+      if (jsonOutput) {
+        // Check if Squad Lead needs more information
+        if (jsonOutput.needsMoreInfo === true && jsonOutput.questions && Array.isArray(jsonOutput.questions)) {
+          console.log('❓ Squad Lead needs more information:');
+          jsonOutput.questions.forEach((q, i) => console.log(`  ${i + 1}. ${q}`));
+
+          // Format questions in a user-friendly way
+          const formattedQuestions = `🙋 El Squad Lead necesita más información para continuar:
+
+${jsonOutput.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+💬 Por favor responde estas preguntas para que el Squad Lead pueda generar el plan de ejecución.`;
+
+          return await this.handleNeedsHumanInfo(task, formattedQuestions, startTime);
+        }
+
+        // Validate structure - MUST have tasks array
+        if (!jsonOutput.tasks || !Array.isArray(jsonOutput.tasks)) {
+          throw new Error('Invalid JSON: Missing or invalid "tasks" array. Got: ' + JSON.stringify(jsonOutput));
+        }
+
+        // Validate structure - MUST have agents array
+        if (!jsonOutput.agents || !Array.isArray(jsonOutput.agents)) {
+          throw new Error('Invalid JSON: Missing or invalid "agents" array');
+        }
+
+        // Validate that tasks array has at least one task
+        if (jsonOutput.tasks.length === 0) {
+          throw new Error('Invalid JSON: tasks array is empty');
+        }
+
+        // Validate that agents array has at least one agent
+        if (jsonOutput.agents.length === 0) {
+          throw new Error('Invalid JSON: agents array is empty');
+        }
+
+        await this.completeTask(task._id, {
+          success: true,
+          result: jsonOutput,
+          duration: Date.now() - startTime
+        });
+
+        // Auto-process Squad Lead output
+        try {
+          await this.processSquadOutput(task._id, jsonOutput);
+          console.log('✅ Squad Lead output processed successfully');
+        } catch (processError) {
+          console.error(`⚠️ Failed to process Squad Lead output: ${processError.message}`);
+        }
+
+        return true;
       }
 
-      // Validate structure - MUST have agents array
-      if (!jsonOutput.agents || !Array.isArray(jsonOutput.agents)) {
-        throw new Error('Invalid JSON: Missing or invalid "agents" array');
+      // SECOND: If JSON parsing failed, check if this is a question/request for info
+      // Note: isResumeTask is already declared above (line 695)
+
+      if (!isResumeTask && parseError) {
+        // Signs that this is a request for more information (no length limit)
+        // Strong indicators that Squad Lead needs more info:
+        const questionIndicators = [
+          'para poder crear',
+          'necesito que respondas',
+          'para continuar',
+          'respuesta fue:',
+          'dato que falta',
+          'información que necesito',
+          'necesito que me proporciones',
+          '¿cuál es el',
+          '¿qué es el',
+          '¿cuál es tu',
+          'what is your',
+          'please provide',
+          'necesita saber',
+          'requiero que',
+          'para generar el plan',
+          'una vez tenga',
+          'responde lo siguiente'
+        ];
+
+        const isQuestionResponse = questionIndicators.some(indicator =>
+          content.toLowerCase().includes(indicator.toLowerCase())
+        );
+
+        if (isQuestionResponse) {
+          console.log('❓ Squad Lead is asking for more information');
+          return await this.handleNeedsHumanInfo(task, content, startTime);
+        }
       }
 
-      // Validate that tasks array has at least one task
-      if (jsonOutput.tasks.length === 0) {
-        throw new Error('Invalid JSON: tasks array is empty');
-      }
-
-      // Validate that agents array has at least one agent
-      if (jsonOutput.agents.length === 0) {
-        throw new Error('Invalid JSON: agents array is empty');
-      }
-
-      await this.completeTask(task._id, {
-        success: true,
-        result: jsonOutput,
-        duration: Date.now() - startTime
-      });
-
-      // Auto-process Squad Lead output
-      try {
-        await this.processSquadOutput(task._id, jsonOutput);
-        console.log('✅ Squad Lead output processed successfully');
-      } catch (processError) {
-        console.error(`⚠️ Failed to process Squad Lead output: ${processError.message}`);
-      }
-
-      return true;
+      // THIRD: If we get here, it's neither valid JSON nor a question
+      throw new Error('Squad Lead did not return valid JSON or questions. Response was: ' + content.substring(0, 200));
     } catch (error) {
       console.error(`❌ Mission analysis failed: ${error.message}`);
       await this.failTask(task._id, error);
@@ -764,6 +845,54 @@ ONLY when you have specific, actionable details, create a JSON plan:
    * Handle when Squad Lead needs human input
    * Creates a task for the human to answer questions
    */
+  generateQuestionsForMission(task) {
+    // Generate predefined questions based on mission title/description
+    const title = (task.title || '').toLowerCase();
+    const desc = (task.description || '').toLowerCase();
+
+    // Content creation missions
+    if (title.includes('charla') || title.includes('presentacion') || title.includes('presentación') ||
+        title.includes('discurso') || title.includes('conferencia') || title.includes('talk')) {
+      return [
+        "¿Cuál es el tema o tópico específico de la charla?",
+        "¿Quién es el perfil de la audiencia (principiantes, desarrolladores, expertos, negocios)?",
+        "¿Qué tono prefieres (técnico, informal, inspiracional, educativo)?",
+        "¿Requieres algún formato específico (slides, guion, solo speech)?",
+        "¿Tienes material de referencia o enlaces base?"
+      ];
+    }
+
+    // Development/technical missions
+    if (title.includes('desarrollar') || title.includes('aplicacion') || title.includes('aplicación') ||
+        title.includes('feature') || title.includes('codigo') || title.includes('código')) {
+      return [
+        "¿Qué tecnologias/frameworks específicos se deben usar?",
+        "¿Hay requisitos funcionales específicos?",
+        "¿Existe código base o se empieza desde cero?",
+        "¿Qué tipo de autenticación/autorización se necesita?",
+        "¿Hay restricciones de tiempo o presupuesto?"
+      ];
+    }
+
+    // Research missions
+    if (title.includes('investigar') || title.includes('analizar') || title.includes('buscar')) {
+      return [
+        "¿Qué aspecto específico se debe investigar?",
+        "¿Fuentes de información preferidas o a evitar?",
+        "¿Qué nivel de profundidad se necesita (resumen, detallado, técnico)?",
+        "¿Hay algo específico que se quiere descubrir o validar?"
+      ];
+    }
+
+    // Generic questions for other missions
+    return [
+      "¿Cuál es el objetivo específico de esta misión?",
+      "¿Qué entregable concreto se espera?",
+      "¿Hay restricciones o preferencias específicas?",
+      "¿Qué información adicional me puedes dar para entender mejor qué necesitas?"
+    ];
+  }
+
   async handleNeedsHumanInfo(task, questionsContent, startTime) {
     console.log('❓ Squad Lead necesita información del humano');
 
@@ -848,36 +977,38 @@ ONLY when you have specific, actionable details, create a JSON plan:
     const messages = [
       {
         role: 'system',
-        content: `You are an Auditor AI agent specialized in analyzing failed tasks and deciding recovery actions.
+        content: `Eres un agente Auditor especializado en analizar tareas fallidas y decidir acciones de recuperación.
 
-CRITICAL: You MUST respond with ONLY a valid JSON object (no markdown, no explanation text).
+CRÍTICO: Debes responder SOLO con un objeto JSON válido (sin markdown, sin texto de explicación).
 
-Your decision will be executed automatically, so be precise.
+Tu decisión se ejecutará automáticamente, así que sé preciso.
 
-Decision types:
-- reassign: Assign to a different agent type (when agent lacks skills)
-- refine: Rewrite task description (when instructions are unclear)
-- escalate_human: Ask user for information (when data is missing)
-- retry: Try again with same agent (when error was temporary)
+IMPORTANTE: Responde SIEMPRE en español.
 
-Response format EXACTLY:
+Tipos de decisión:
+- reassign: Asignar a un tipo de agente diferente (cuando el agente carece de habilidades)
+- refine: Reescribir la descripción de la tarea (cuando las instrucciones no son claras)
+- escalate_human: Pedir información al usuario (cuando faltan datos)
+- retry: Intentar de nuevo con el mismo agente (cuando el error fue temporal)
+
+Formato de respuesta EXACTO:
 {
   "decision": "reassign|refine|escalate_human|retry",
-  "reason": "Brief explanation",
+  "reason": "Breve explicación",
   "suggestedAgentRole": "researcher|developer|writer|analyst|null",
-  "refinedDescription": "Clear task description",
-  "questionForHuman": "What information do you need?"
+  "refinedDescription": "Descripción clara de la tarea",
+  "questionForHuman": "¿Qué información necesitas?"
 }
 
-IMPORTANT: Only include fields relevant to your decision:
-- reassign: Include suggestedAgentRole
-- refine: Include refinedDescription
-- escalate_human: Include questionForHuman
-- retry: Only decision and reason needed`
+IMPORTANTE: Incluye solo los campos relevantes para tu decisión:
+- reassign: Incluye suggestedAgentRole
+- refine: Incluye refinedDescription
+- escalate_human: Incluye questionForHuman
+- retry: Solo decision y reason son necesarios`
       },
       {
         role: 'user',
-        content: task.description
+        content: task.description + "\n\nResponde en español con el JSON de decisión."
       }
     ];
 

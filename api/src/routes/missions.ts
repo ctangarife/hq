@@ -481,4 +481,73 @@ router.delete('/:id', async (req, res, next) => {
   }
 })
 
+// POST /api/missions/:id/restart - Restart mission (reset to draft)
+router.post('/:id/restart', async (req, res, next) => {
+  try {
+    const mission = await Mission.findById(req.params.id)
+
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    if (mission.status === 'draft') {
+      return res.status(400).json({ error: 'Cannot restart a mission that is already in draft status' })
+    }
+
+    // Store previous state for logging
+    const previousStatus = mission.status
+    const previousSquadLeadId = mission.squadLeadId
+
+    // Reset mission to draft state
+    mission.status = 'draft'
+    mission.autoOrchestrate = false
+    mission.squadLeadId = undefined
+    mission.startedAt = undefined
+    mission.completedAt = undefined
+    mission.awaitingHumanTaskId = undefined
+
+    // Clear orchestration log
+    mission.orchestrationLog = []
+
+    // Clear task IDs (but don't delete tasks - they remain for history)
+    const previousTaskIds = [...mission.taskIds]
+    mission.taskIds = []
+
+    await mission.save()
+
+    // Optionally: Update all associated tasks to cancelled status
+    if (previousTaskIds.length > 0) {
+      await Task.updateMany(
+        { _id: { $in: previousTaskIds } },
+        { status: 'cancelled' }
+      )
+    }
+
+    // Log activity
+    await activityLog.log({
+      type: 'mission.restarted',
+      missionId: mission._id.toString(),
+      title: mission.title,
+      details: {
+        previousStatus,
+        previousSquadLeadId,
+        tasksCleared: previousTaskIds.length
+      },
+      timestamp: new Date()
+    })
+
+    res.json({
+      message: 'Mission restarted successfully',
+      mission: {
+        _id: mission._id,
+        title: mission.title,
+        status: mission.status,
+        tasksCleared: previousTaskIds.length
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 export default router

@@ -21,9 +21,12 @@ export function errorHandler(
     stack: err.stack
   })
 
-  res.status(statusCode).json({
-    error: message,
-    path: req.path,
-    timestamp: new Date().toISOString()
-  })
+  // Check if headers already sent to avoid ERR_HTTP_HEADERS_SENT error
+  if (!res.headersSent) {
+    res.status(statusCode).json({
+      error: message,
+      path: req.path,
+      timestamp: new Date().toISOString()
+    })
+  }
 }

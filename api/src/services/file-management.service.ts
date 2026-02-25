@@ -5,6 +5,7 @@ import crypto from 'crypto'
 import { mkdirp } from 'mkdirp'
 import PDFDocument from 'pdfkit'
 import { marked } from 'marked'
+import Task from '../models/Task'
 
 const FILES_BASE_PATH = process.env.HQ_FILES_PATH || '/data/hq-files'
 
@@ -275,6 +276,11 @@ export class FileManagementService {
     return await fs.readFile(filePath)
   }
 
+  async getOutputFile(missionId: string, filename: string): Promise<Buffer> {
+    const filePath = path.join(this.basePath, 'missions', missionId, 'outputs', filename)
+    return await fs.readFile(filePath)
+  }
+
   /**
    * Leer metadata de misión
    */
@@ -298,10 +304,23 @@ export class FileManagementService {
   ): Promise<void> {
     const metadataPath = path.join(this.basePath, 'missions', missionId, 'metadata.json')
 
-    const content = await fs.readFile(metadataPath, 'utf-8')
-    const metadata: MissionMetadata = JSON.parse(content)
+    let metadata: MissionMetadata
+
+    try {
+      const content = await fs.readFile(metadataPath, 'utf-8')
+      metadata = JSON.parse(content)
+    } catch {
+      // File doesn't exist, create new metadata
+      metadata = {
+        missionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        outputFiles: []
+      }
+    }
 
     updater(metadata)
+    metadata.updatedAt = new Date().toISOString()
 
     await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2))
   }
@@ -504,14 +523,71 @@ export class FileManagementService {
     const outputsPath = path.join(missionPath, 'outputs')
     await mkdirp(outputsPath)
 
-    // Leer todas las tareas
-    const taskDirs = await fs.readdir(tasksPath, { withFileTypes: true })
-    const taskDirsFiltered = taskDirs.filter(d => d.isDirectory())
+    // First, try to get task outputs from database
+    const tasksFromDb = await Task.find({ missionId, status: 'completed' })
+      .select('title type output result description')
+      .sort({ createdAt: 1 })
 
     let consolidatedMarkdown = `# Mission Report: ${missionId}\n\n`
     consolidatedMarkdown += `Generated: ${new Date().toISOString()}\n\n`
     consolidatedMarkdown += `---\n\n`
 
+    // Process tasks from database
+    if (tasksFromDb.length > 0) {
+      for (const task of tasksFromDb) {
+        const taskId = task._id.toString()
+        const taskTitle = task.title || task.type || 'Unknown Task'
+
+        // Try to get content from output.result or output directly
+        let content = ''
+        if (task.output?.result) {
+          // If result is a string, use it directly
+          if (typeof task.output.result === 'string') {
+            content = task.output.result
+          } else if (task.output.result?.result && typeof task.output.result.result === 'string') {
+            // Nested result structure
+            content = task.output.result.result
+          } else {
+            // Try to stringify
+            content = JSON.stringify(task.output.result, null, 2)
+          }
+        } else if (task.output) {
+          content = typeof task.output === 'string' ? task.output : JSON.stringify(task.output, null, 2)
+        }
+
+        // If no content in output, try partialOutput
+        if (!content && (task as any).partialOutput) {
+          content = (task as any).partialOutput
+        }
+
+        // Add to consolidated markdown
+        if (content) {
+          // Extract markdown from result if it contains markdown code blocks
+          let markdownContent = content
+          const mdMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/)
+          if (mdMatch) {
+            markdownContent = mdMatch[1]
+          }
+
+          consolidatedMarkdown += `## ${taskTitle}\n\n${markdownContent}\n\n---\n\n`
+        } else {
+          consolidatedMarkdown += `## ${taskTitle}\n\n*No output available*\n\n---\n\n`
+        }
+      }
+    }
+
+    // Also check for physical files in tasks directory (for backwards compatibility)
+    let taskDirsFiltered: any[] = []
+    try {
+      const taskDirs = await fs.readdir(tasksPath, { withFileTypes: true })
+      taskDirsFiltered = taskDirs.filter((d: any) => d.isDirectory())
+    } catch (error) {
+      // Tasks directory doesn't exist yet, create it
+      await mkdirp(tasksPath)
+      console.log(`📁 Created tasks directory for mission: ${missionId}`)
+    }
+
+    // Process physical files (if any exist)
     for (const taskDir of taskDirsFiltered) {
       const taskId = taskDir.name
       const outputPath = path.join(tasksPath, taskId, 'output.md')
@@ -527,21 +603,37 @@ export class FileManagementService {
           const parsed = JSON.parse(jsonContent)
           consolidatedMarkdown += `## Task: ${taskId}\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`\n\n---\n\n`
         } catch {
-          consolidatedMarkdown += `## Task: ${taskId}\n\n*No output available*\n\n---\n\n`
+          // Skip
         }
       }
+    }
+
+    // If no content was added at all
+    if (tasksFromDb.length === 0 && taskDirsFiltered.length === 0) {
+      consolidatedMarkdown += `*No task outputs available yet*\n\n`
     }
 
     // Guardar markdown consolidado
     const finalMdPath = path.join(outputsPath, 'final_report.md')
     await fs.writeFile(finalMdPath, consolidatedMarkdown)
 
-    // Generar PDF (placeholder por ahora)
+    // Generar PDF
     const finalPdfPath = path.join(outputsPath, 'final_report.pdf')
     await this.generatePDF(consolidatedMarkdown, finalPdfPath)
 
-    // Actualizar metadata
+    // Get PDF file size and checksum
+    const pdfStats = await fs.stat(finalPdfPath)
+    const pdfBuffer = await fs.readFile(finalPdfPath)
+    const pdfChecksum = crypto.createHash('sha256').update(pdfBuffer).digest('hex')
+
+    // Actualizar metadata - agregar tanto Markdown como PDF
     await this.updateMissionMetadata(missionId, (metadata) => {
+      // Remove previous reports if exist
+      metadata.outputFiles = metadata.outputFiles.filter(f =>
+        !f.originalName.includes('final_report')
+      )
+
+      // Add Markdown
       metadata.outputFiles.push({
         id: crypto.randomBytes(16).toString('hex'),
         originalName: 'final_report.md',
@@ -552,10 +644,22 @@ export class FileManagementService {
         checksum: crypto.createHash('sha256').update(consolidatedMarkdown).digest('hex'),
         uploadedAt: new Date()
       })
+
+      // Add PDF
+      metadata.outputFiles.push({
+        id: crypto.randomBytes(16).toString('hex'),
+        originalName: 'final_report.pdf',
+        mimeType: 'application/pdf',
+        size: pdfStats.size,
+        path: finalPdfPath,
+        relativePath: path.join('missions', missionId, 'outputs', 'final_report.pdf').replace(/\\/g, '/'),
+        checksum: pdfChecksum,
+        uploadedAt: new Date()
+      })
     })
 
     console.log(`✅ Mission outputs consolidated: ${missionId}`)
-    return finalMdPath
+    return finalPdfPath
   }
 
   /**

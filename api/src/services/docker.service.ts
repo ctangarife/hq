@@ -263,6 +263,19 @@ export class DockerService {
         tail: 1
       })
 
+      // Validate that stream is a valid object with 'on' method
+      if (!stream || typeof stream.on !== 'function') {
+        console.error('Invalid stream object returned from container.logs()')
+        callback({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          message: 'Invalid stream object'
+        })
+        // Return a dummy stream to prevent crashes
+        const { Readable } = require('stream')
+        return Readable.from([''])
+      }
+
       stream.on('data', (chunk: Buffer) => {
         const logString = chunk.toString('utf-8')
         const logs = this.parseDockerLogs(logString)
@@ -288,7 +301,9 @@ export class DockerService {
           message: 'Container not found'
         })
       }
-      throw error
+      // Return a dummy stream to prevent crashes
+      const { Readable } = require('stream')
+      return Readable.from([''])
     }
   }
 

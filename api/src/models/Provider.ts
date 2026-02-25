@@ -64,7 +64,7 @@ const providerSchema = new Schema<Provider & Document>({
 })
 
 // Indexes
-providerSchema.index({ providerId: 1 })
+// Note: providerId already has unique: true, which creates an index automatically
 providerSchema.index({ enabled: 1 })
 
 export default mongoose.model<Provider & Document>('Provider', providerSchema)

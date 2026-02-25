@@ -198,10 +198,9 @@ router.get('/mission/:missionId/outputs/download', async (req, res) => {
       return res.status(404).json({ error: 'Output not found. Generate it first.' })
     }
 
-    const buffer = await fileManagementService.getInputFile(
-      missionId,
-      path.join('outputs', path.basename(outputFile.path)).replace(/\\/g, '/')
-    )
+    // Use getOutputFile for outputs directory (not getInputFile)
+    const filename = path.basename(outputFile.path)
+    const buffer = await fileManagementService.getOutputFile(missionId, filename)
 
     res.setHeader('Content-Type', outputFile.mimeType)
     res.setHeader('Content-Disposition', `attachment; filename="${outputFile.originalName}"`)

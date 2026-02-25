@@ -5,6 +5,7 @@
 
 import Task from '../models/Task.js'
 import Agent from '../models/Agent.js'
+import { findAgentByIdOrContainerId } from '../utils/agent-helpers.js'
 
 export interface AgentMetrics {
   agentId: string
@@ -48,7 +49,7 @@ export interface SystemMetrics {
  * Phase 9: Uses stored metrics from Agent model for efficiency
  */
 export async function getAgentMetrics(agentId: string): Promise<AgentMetrics | null> {
-  const agent = await Agent.findById(agentId)
+  const agent = await findAgentByIdOrContainerId(agentId)
   if (!agent) {
     return null
   }

@@ -388,11 +388,51 @@ const consolidateMission = async (missionId: string) => {
   if (!confirm('¿Consolidar outputs de esta misión en un PDF?')) return
   try {
     await resourcesService.consolidate(missionId)
-    alert('✅ Outputs consolidados exitosamente')
+
+    // Download the generated PDF with authentication
+    const token = localStorage.getItem('token') || 'hq-agent-token'
+    const API_URL = import.meta.env.VITE_API_URL || '/api'
+    const downloadUrl = `${API_URL}/resources/mission/${missionId}/outputs/download?format=pdf`
+
+    const response = await fetch(downloadUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || 'Error al descargar el archivo')
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `mission_${missionId}_report.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    alert('✅ Outputs consolidados y PDF descargado')
     await fetchMissions()
   } catch (err) {
     console.error('Error consolidating mission:', err)
-    alert('Error al consolidar outputs')
+    alert('Error al consolidar outputs: ' + (err as Error).message)
+  }
+}
+
+// Restart mission
+const restartMission = async (missionId: string) => {
+  if (!confirm('¿Reiniciar esta misión? Esto la volverá al estado borrador y eliminará todas las tareas y asignaciones.')) return
+  try {
+    await missionsService.restart(missionId)
+    alert('✅ Misión reiniciada exitosamente')
+    await fetchMissions()
+  } catch (err) {
+    console.error('Error restarting mission:', err)
+    alert('Error al reiniciar misión')
   }
 }
 
@@ -708,6 +748,16 @@ onMounted(() => {
               title="Consolidar outputs en PDF"
             >
               📄 Consolidar
+            </button>
+
+            <!-- Restart Button -->
+            <button
+              v-if="mission.status !== 'draft'"
+              @click="restartMission(mission._id)"
+              class="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm transition"
+              title="Reiniciar misión (volver a borrador)"
+            >
+              🔄 Reiniciar
             </button>
 
             <!-- Dependency Graph Button (Phase 12.1) -->
