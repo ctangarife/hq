@@ -403,6 +403,57 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
     throw new Error('Unknown Z.ai response format: ' + JSON.stringify(result).substring(0, 200));
   }
 
+  /**
+   * Extract URLs from text using regex
+   */
+  extractUrls(text) {
+    if (!text) return []
+    const urlRegex = /(https?:\/\/[^\s\])}">]+)/gi
+    return text.match(urlRegex) || []
+  }
+
+  /**
+   * Fetch content from URLs using the browser service
+   */
+  async fetchWebContent(urls) {
+    const contents = []
+
+    for (const url of urls) {
+      try {
+        console.log(`🌐 Fetching content from: ${url}`)
+        const response = await fetch(`${config.hqApiUrl}/resources/browser/extract`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.hqApiToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ url, options: { wait: 2000 } })
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            contents.push({
+              url: data.url,
+              title: data.title,
+              content: data.content
+            })
+            console.log(`✅ Fetched ${data.content?.length || 0} chars from ${url}`)
+          }
+        } else {
+          console.log(`⚠️ Failed to fetch ${url}: ${response.statusText}`)
+        }
+      } catch (error) {
+        console.log(`⚠️ Error fetching ${url}: ${error.message}`)
+      }
+    }
+
+    return contents
+  }
+
+  /**
+   * Execute a task using LLM, with web scraping support for web_search tasks
+   */
   async executeTaskWithLLM(task) {
     const messages = [
       {
@@ -423,6 +474,83 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
     }
 
     prompt += `Por favor ejecuta esta tarea y reporta el resultado en español.`;
+
+    // For web_search tasks, fetch content from URLs first
+    let webContent = ''
+    if (task.type === 'web_search') {
+      console.log('🔍 Web search task detected - looking for URLs...')
+
+      // Extract URLs from multiple sources
+      const urls = new Set()
+
+      // From description
+      const descUrls = this.extractUrls(task.description || '')
+      descUrls.forEach(u => urls.add(u))
+
+      // From input
+      if (task.input) {
+        // Check for urls array
+        if (Array.isArray(task.input.urls)) {
+          task.input.urls.forEach(u => urls.add(u))
+        }
+        // Check for single url string
+        if (task.input.url) {
+          urls.add(task.input.url)
+        }
+        // Extract from any text field
+        Object.values(task.input).forEach(v => {
+          if (typeof v === 'string') {
+            this.extractUrls(v).forEach(u => urls.add(u))
+          }
+        })
+      }
+
+      // Fetch mission resources if available
+      if (task.missionId) {
+        try {
+          const missionResponse = await fetch(`${config.hqApiUrl}/missions/${task.missionId}`, {
+            headers: { 'Authorization': `Bearer ${config.hqApiToken}` }
+          })
+
+          if (missionResponse.ok) {
+            const mission = await missionResponse.json()
+            if (mission.resources && Array.isArray(mission.resources)) {
+              console.log(`📦 Found ${mission.resources.length} mission resources`)
+              mission.resources.forEach(r => {
+                if (r.type === 'url' && Array.isArray(r.content)) {
+                  r.content.forEach(u => urls.add(u))
+                } else if (r.type === 'url' && typeof r.content === 'string') {
+                  urls.add(r.content)
+                }
+              })
+            }
+          }
+        } catch (e) {
+          console.log(`⚠️ Could not fetch mission resources: ${e.message}`)
+        }
+      }
+
+      if (urls.size > 0) {
+        console.log(`🌐 Found ${urls.size} URLs to scrape: ${Array.from(urls).join(', ')}`)
+        const scraped = await this.fetchWebContent(Array.from(urls))
+
+        if (scraped.length > 0) {
+          webContent = '\n\n# Contenido Web Extraído\n\n'
+          scraped.forEach((item, i) => {
+            webContent += `## Fuente ${i + 1}: ${item.title || item.url}\n`
+            webContent += `URL: ${item.url}\n\n`
+            webContent += `${item.content?.substring(0, 5000)}...\n\n` // Limit to 5000 chars per source
+          })
+
+          prompt = webContent + '\n\n# Tarea Original\n\n' + prompt
+          console.log(`✅ Web content added: ${webContent.length} chars`)
+        } else {
+          console.log('⚠️ No content could be scraped from URLs')
+        }
+      } else {
+        console.log('ℹ️ No URLs found in task - proceeding without web scraping')
+      }
+    }
 
     messages.push({ role: 'user', content: prompt });
 

@@ -2,6 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import path from 'path'
 import { fileManagementService } from '../services/file-management.service.js'
+import { browserService } from '../services/browser.service.js'
 
 const router = express.Router()
 
@@ -347,6 +348,87 @@ router.get('/task/:taskId/stream', async (req, res) => {
     })
   } catch (error: any) {
     console.error('Error streaming output:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * Browser endpoints - Web scraping capabilities
+ */
+
+/**
+ * POST /api/resources/browser/extract
+ * Extraer contenido de una URL
+ */
+router.post('/browser/extract', async (req, res) => {
+  try {
+    const { url, options } = req.body
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL is required' })
+    }
+
+    const result = await browserService.extractContent(url, options)
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error })
+    }
+
+    res.json({
+      success: true,
+      url: result.url,
+      title: result.title,
+      content: result.text,
+      html: result.html,
+      contentLength: result.text?.length || 0
+    })
+  } catch (error: any) {
+    console.error('Error extracting content:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * POST /api/resources/browser/extract-multiple
+ * Extraer contenido de múltiples URLs
+ */
+router.post('/browser/extract-multiple', async (req, res) => {
+  try {
+    const { urls, options } = req.body
+
+    if (!Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'URLs array is required' })
+    }
+
+    const results = await browserService.extractMultiple(urls, options)
+
+    res.json({
+      success: true,
+      results,
+      total: urls.length,
+      successful: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length
+    })
+  } catch (error: any) {
+    console.error('Error extracting multiple:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+/**
+ * GET /api/resources/browser/health
+ * Verificar si el browser agent está disponible
+ */
+router.get('/browser/health', async (req, res) => {
+  try {
+    const healthy = await browserService.healthCheck()
+
+    res.json({
+      service: 'browser',
+      status: healthy ? 'available' : 'unavailable',
+      timestamp: new Date().toISOString()
+    })
+  } catch (error: any) {
     res.status(500).json({ error: error.message })
   }
 })

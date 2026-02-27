@@ -74,6 +74,7 @@ interface UploadedFile {
 const missions = ref<Mission[]>([])
 const humanTasks = ref<HumanTask[]>([])
 const showCreateModal = ref(false)
+const showEditModal = ref(false)  // NEW: Edit mission modal
 const showTasksModal = ref(false)
 const showLogModal = ref(false)
 const showHumanResponseModal = ref(false)
@@ -87,6 +88,7 @@ const submitting = ref(false)
 const orchestrating = ref(false)
 const submittingHumanResponse = ref(false)
 const selectedMission = ref<Mission | null>(null)
+const editingMission = ref<Mission | null>(null)  // NEW: Mission being edited
 const selectedHumanTask = ref<HumanTask | null>(null)
 const dependencyMissionId = ref<string | null>(null)  // Phase 12.1: Mission ID for DAG view
 const authToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') || 'hq-agent-token' : 'hq-agent-token'
@@ -181,6 +183,62 @@ const closeCreateModal = () => {
   }
   selectedTemplate.value = null
   showAdditionalContext.value = false
+}
+
+// Open edit modal for a mission
+const openEditModal = (mission: Mission) => {
+  editingMission.value = mission
+  // Pre-fill form with mission data
+  formData.value = {
+    title: mission.title,
+    description: mission.description,
+    objective: mission.objective || '',
+    missionType: mission.missionType || 'AUTO_ORCHESTRATED',
+    autoOrchestrate: mission.autoOrchestrate || false,
+    templateId: mission.templateId,
+    context: mission.context || '',
+    audience: mission.audience || '',
+    deliverableFormat: mission.deliverableFormat || '',
+    successCriteria: mission.successCriteria || '',
+    constraints: mission.constraints || '',
+    tone: mission.tone || ''
+  }
+  showEditModal.value = true
+}
+
+// Close edit modal
+const closeEditModal = () => {
+  showEditModal.value = false
+  editingMission.value = null
+}
+
+// Save edited mission
+const saveMissionEdit = async () => {
+  if (!editingMission.value) return
+
+  try {
+    submitting.value = true
+
+    await missionsService.update(editingMission.value._id, {
+      title: formData.value.title,
+      description: formData.value.description,
+      objective: formData.value.objective,
+      context: formData.value.context,
+      audience: formData.value.audience,
+      deliverableFormat: formData.value.deliverableFormat,
+      successCriteria: formData.value.successCriteria,
+      constraints: formData.value.constraints,
+      tone: formData.value.tone
+    })
+
+    await fetchMissions()
+    closeEditModal()
+  } catch (err) {
+    console.error('Error updating mission:', err)
+    alert('Error al actualizar misión')
+  } finally {
+    submitting.value = false
+  }
 }
 
 // Phase 12.1: Open dependency graph modal
@@ -463,7 +521,10 @@ const selectTemplate = (template: any) => {
   selectedTemplate.value = template
   formData.value.templateId = template.templateId
 
-  // Pre-fill form with template defaults
+  // Pre-fill ALL form fields with template defaults
+  formData.value.title = template.defaultTitle || ''
+  formData.value.description = template.defaultDescription || ''
+  formData.value.objective = template.defaultObjective || ''
   formData.value.context = template.context || ''
   formData.value.audience = template.audience || ''
   formData.value.deliverableFormat = template.deliverableFormat || ''
@@ -478,31 +539,36 @@ const createMissionFromTemplate = async () => {
   try {
     submitting.value = true
 
-    // Extract parameters from template title placeholders
-    const params: Record<string, string> = {}
-    const matches = selectedTemplate.value.defaultTitle.match(/\{([^}]+)\}/g) || []
-    matches.forEach((match: string) => {
-      const key = match.substring(1, match.length - 1)
-      const value = prompt(`Ingresa valor para: ${key}`, key)
-      if (value) params[key] = value
-    })
-
+    // Create mission from template (with placeholders)
     const response = await templatesService.createMission(
       selectedTemplate.value.templateId,
-      params
+      {} // Empty params - user edits form values directly
     )
+
+    const missionId = response.data.mission._id
+
+    // Immediately update the mission with form data (replacing placeholders)
+    await missionsService.update(missionId, {
+      title: formData.value.title,
+      description: formData.value.description,
+      objective: formData.value.objective,
+      context: formData.value.context,
+      audience: formData.value.audience,
+      deliverableFormat: formData.value.deliverableFormat,
+      successCriteria: formData.value.successCriteria,
+      constraints: formData.value.constraints,
+      tone: formData.value.tone
+    })
 
     await fetchMissions()
     closeCreateModal()
 
     // Ask if user wants to orchestrate immediately
-    if (response.data.mission.status === 'draft') {
-      const shouldOrchestrate = confirm(
-        '✅ Misión creada desde plantilla.\n\n¿Deseas iniciar la orquestación automática ahora?'
-      )
-      if (shouldOrchestrate) {
-        await orchestrateMission(response.data.mission._id)
-      }
+    const shouldOrchestrate = confirm(
+      '✅ Misión creada desde plantilla.\n\n¿Deseas iniciar la orquestación automática ahora?'
+    )
+    if (shouldOrchestrate) {
+      await orchestrateMission(missionId)
     }
   } catch (err) {
     console.error('Error creating mission from template:', err)
@@ -720,6 +786,15 @@ onMounted(() => {
               title="Ver tareas de la misión"
             >
               📋 Tareas
+            </button>
+
+            <!-- Edit Button (NEW) -->
+            <button
+              @click="openEditModal(mission)"
+              class="px-3 py-1 bg-blue-700 hover:bg-blue-600 text-white rounded text-sm transition"
+              title="Editar misión"
+            >
+              ✏️ Editar
             </button>
 
             <!-- Files Button -->
@@ -1091,6 +1166,139 @@ onMounted(() => {
               :disabled="submitting || orchestrating || !formData.title || !formData.description"
             >
               {{ submitting ? 'Creando...' : orchestrating ? 'Orquestando...' : 'Crear Misión' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Mission Modal (NEW) -->
+    <div v-if="showEditModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div class="bg-gray-800 rounded-lg w-full max-w-lg border border-gray-700 flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-700 flex-shrink-0">
+          <h2 class="text-xl font-bold text-white">Editar Misión</h2>
+          <p v-if="editingMission" class="text-gray-400 text-sm mt-1">ID: {{ editingMission._id }}</p>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="p-4 overflow-y-auto flex-1">
+          <form @submit.prevent="saveMissionEdit" class="space-y-4">
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Título *</label>
+            <input
+              v-model="formData.title"
+              type="text"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Descripción *</label>
+            <textarea
+              v-model="formData.description"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+              rows="3"
+              required
+            />
+          </div>
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">Objetivo Principal</label>
+            <input
+              v-model="formData.objective"
+              type="text"
+              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+            />
+          </div>
+
+          <!-- Additional Context Section -->
+          <div>
+            <button
+              type="button"
+              @click="showAdditionalContext = !showAdditionalContext"
+              class="flex items-center gap-2 text-gray-400 hover:text-white text-sm mb-2"
+            >
+              <span class="transition" :class="showAdditionalContext ? 'rotate-90' : ''">▶</span>
+              Contexto adicional de la misión
+            </button>
+            <div v-if="showAdditionalContext" class="space-y-3 pl-4 border-l-2 border-gray-600">
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Contexto</label>
+                <textarea
+                  v-model="formData.context"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  rows="2"
+                  placeholder="Información adicional de contexto..."
+                />
+              </div>
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Audiencia</label>
+                <input
+                  v-model="formData.audience"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="¿A quién va dirigido?"
+                />
+              </div>
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Formato de Entregable</label>
+                <input
+                  v-model="formData.deliverableFormat"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: PDF, Markdown, Video..."
+                />
+              </div>
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Criterios de Éxito</label>
+                <textarea
+                  v-model="formData.successCriteria"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  rows="2"
+                  placeholder="¿Cómo se mide el éxito?"
+                />
+              </div>
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Restricciones</label>
+                <textarea
+                  v-model="formData.constraints"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  rows="2"
+                  placeholder="Límites o restricciones..."
+                />
+              </div>
+              <div>
+                <label class="block text-gray-400 text-sm mb-1">Tono</label>
+                <input
+                  v-model="formData.tone"
+                  type="text"
+                  class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Ej: Formal, casual, técnico..."
+                />
+              </div>
+            </div>
+          </div>
+        </form>
+        </div>
+
+        <!-- Footer - Buttons -->
+        <div class="p-4 border-t border-gray-700 flex-shrink-0">
+          <div class="flex gap-2 justify-end">
+            <button
+              type="button"
+              @click="closeEditModal"
+              class="px-4 py-2 text-gray-400 hover:text-white transition"
+              :disabled="submitting"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              @click="saveMissionEdit"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition disabled:opacity-50"
+              :disabled="submitting"
+            >
+              {{ submitting ? 'Guardando...' : 'Guardar Cambios' }}
             </button>
           </div>
         </div>
