@@ -1,0 +1,30 @@
+# Normalización de line endings
+# Evita el problema CRLF/LF que ensucia diffs y contamina git blame.
+# * text=auto      → Git normaliza archivos de texto a LF en el repo,
+#                    convirtiendo a CRLF solo en checkout en Windows (si aplica).
+# *.sh text eol=lf → Scripts shell SIEMPRE LF (requerido en Linux/containers).
+# *.bat text eol=crlf → Scripts Windows SIEMPRE CRLF.
+
+* text=auto
+
+# Scripts y configs de container — LF obligatorio (corren en Linux)
+*.sh       text eol=lf
+*.cjs      text eol=lf
+*.mjs      text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+
+# Binarios — nunca tocar
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
