@@ -1,15 +1,14 @@
 # ==============================================================================
-# HQ Agent - Goose Runtime
+# HQ Agent - Goose Runtime (via LiteLLM proxy)
 # ==============================================================================
 # Container efímero para tareas especializadas (researcher, writer, developer,
-# analyst). Cada container ejecuta UNA tarea via `goose run --headless` y muere.
+# analyst). Cada container ejecuta UNA tarea via `goose run` y muere.
 #
 # Patrón: levantar → ejecutar → apagar (sin estado, sin polling, sin daemon).
 #
-# Providers configurados:
-#   - Z.ai (anthropic-compatible) → glm-4.7
-#   - LiteLLM proxy (openai-compatible) → cualquier modelo del proxy central
-#   - Anthropic nativo (opcional)
+# Todos los LLM calls van a través del proxy LiteLLM centralizado
+# (litellm.ctangarife.com) con budget tracking, rate limiting y fallback.
+# La virtual key se inyecta en runtime como OPENAI_API_KEY.
 # ==============================================================================
 
 FROM debian:bookworm-slim
@@ -47,18 +46,26 @@ RUN mkdir -p /tmp/goose-dl && \
 ENV XDG_CONFIG_HOME=/config
 RUN mkdir -p /config/goose
 
-# Configuración de providers (sin API keys — se inyectan por ENV en runtime)
-# Z.ai es anthropic-compatible; el polling skill actual ya lo usa así.
+# Configuración de Goose: provider=openai apuntando a LiteLLM.
+# La virtual key NO va aquí — se inyecta como OPENAI_API_KEY en runtime.
 COPY config.yaml /config/goose/config.yaml
+
+# Host del proxy LiteLLM (puede sobreescribirse en runtime si hace falta).
+# IMPORTANTE: sin sufijo /v1 — Goose lo añade automáticamente al construir
+# la URL (openai-host + /v1/chat/completions). Poner /v1 aquí causaría doble.
+ENV OPENAI_HOST=https://litellm.ctangarife.com
+ENV GOOSE_MODEL=glm-4.7
 
 # Workspace efímero (donde goose escribe si la tarea genera archivos)
 RUN mkdir -p /workspace
 WORKDIR /workspace
 
-# Punto de entrada: goose run en modo no-interactivo.
-# Goose 1.x: `run` es no-interactivo por defecto cuando se pasa -t/--text y no
-# hay TTY. -q/--quiet hace que stdout tenga SOLO la respuesta del modelo
-# (sin logs de tool calls), lo que permite capturar el output limpio.
-# --no-session evita persistir sesión (container efímero, una sola tarea).
-# Los argumentos reales (-t "prompt", --profile, etc.) los pasa la API de HQ.
-ENTRYPOINT ["goose", "run", "--quiet", "--no-session", "--output-format", "text"]
+# Punto de entrada: goose run no-interactivo, prompt por STDIN.
+#
+# Pasamos el prompt por STDIN (-i -) porque es la forma validada que da
+# output limpio con el provider openai-compatible (LiteLLM). La API de HQ
+# hace: docker run -i hq-agent-goose < prompt.txt
+#
+# --no-session: container efímero, una sola tarea, sin persistir sesión.
+# --output-format text: stdout = texto plano de la respuesta del modelo.
+ENTRYPOINT ["goose", "run", "--no-session", "--output-format", "text", "-i", "-"]
