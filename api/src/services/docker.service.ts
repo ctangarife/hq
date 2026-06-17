@@ -65,19 +65,19 @@ export class DockerService {
       HQ_FILES_PATH: filesPath
     }
 
-    // Agregar API key si el agente tiene una específica
-    if (agent.apiKey) {
-      env[`${agent.provider.toUpperCase()}_API_KEY`] = agent.apiKey
-      console.log(`Using agent-specific API key for ${agent.provider}`)
-    } else {
-      // Buscar credenciales en MongoDB
-      const credential = await getCredential(agent.provider)
-      if (credential && credential.token) {
-        env[`${agent.provider.toUpperCase()}_API_KEY`] = credential.token
-        console.log(`Using API key from MongoDB for ${agent.provider} (${credential.name})`)
-      } else {
-        console.warn(`No API key found in MongoDB for provider: ${agent.provider}`)
-      }
+    // Resolver la virtual key de LiteLLM desde MongoDB (vía litellmService).
+    // Reemplaza el patrón viejo getCredential(agent.provider) que buscaba
+    // keys de providers directo. HQ ahora centraliza todo vía LiteLLM proxy.
+    // La imagen hq-agent-goose lee la key de OPENAI_API_KEY y la usa contra
+    // el proxy (openai-compatible).
+    try {
+      const virtualKey = await litellmService.getKey()
+      env['OPENAI_API_KEY'] = virtualKey
+      env['OPENAI_HOST'] = process.env.LITELLM_API_URL || 'https://litellm.ctangarife.com'
+      env['GOOSE_MODEL'] = agent.llmModel || 'glm-4.7'
+      console.log(`Using LiteLLM virtual key for agent ${agent.name}`)
+    } catch (err: any) {
+      console.warn(`Could not resolve LiteLLM key, agent will fail LLM calls: ${err.message}`)
     }
 
     // Configuración del contenedor (HQ Agent no necesita volúmenes complejos)
