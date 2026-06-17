@@ -1,0 +1,27 @@
+# ==============================================================================
+# Goose Provider Configuration - HQ Agent
+# ==============================================================================
+# Las API keys NO van aquí — se inyectan como variables de entorno en runtime
+# (cuando la API de HQ crea el container efímero).
+#
+# Goose lee la key del provider Z.ai (Zhipu) desde:
+#   ZHIPU_API_KEY   (NO es ZAI_API_KEY — Goose usa el nombre interno Zhipu)
+# ==============================================================================
+
+# --- Z.ai (provider primario) ---
+# Modelos: glm-4.7, glm-4.7-flash, glm-4-plus, glm-4-flash
+GOOSE_PROVIDER: zai
+GOOSE_MODEL: glm-4.7
+
+# --- LiteLLM proxy centralizado (alternativa openai-compatible) ---
+# Ver nota: "LiteLLM Centralizado" en el vault de Obsidian.
+# Para activarlo en runtime:
+#   GOOSE_PROVIDER=openai
+#   OPENAI_HOST=https://litellm.ctangarife.com/v1
+#   OPENAI_API_KEY=<virtual-key-del-proyecto>
+#   GOOSE_MODEL=<modelo-del-proxy>
+
+# Sin extensions MCP por defecto — se activan por profile si la tarea lo requiere
+# (ej: researcher carga searxng + browser; writer no carga ninguna).
+# Esto mantiene los containers efímeros lo más livianos posible.
+
