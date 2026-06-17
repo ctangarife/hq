@@ -1,6 +1,7 @@
 import Docker from 'dockerode'
 import path from 'path'
 import { getCredential } from '../lib/credentials.js'
+import { litellmService } from './litellm.service.js'
 
 const docker = new Docker({
   socketPath: process.env.DOCKER_SOCKET || '/var/run/docker.sock'
@@ -122,6 +123,180 @@ export class DockerService {
       console.error('Error creating agent container:', error)
       throw new Error(`Failed to create container: ${error}`)
     }
+  }
+
+  /**
+   * Ejecutar UNA tarea en un container efímero de Goose y devolver el output.
+   *
+   * Arquitectura híbrida: los especialistas (researcher, writer, developer,
+   * analyst) son efímeros. La API spawnea este container, Goose ejecuta la
+   * tarea, el output va a stdout, el container muere (--rm).
+   *
+   * Flujo:
+   *   1. Resolver la virtual key de LiteLLM desde MongoDB (vía litellmService)
+   *   2. Crear container hq-agent-goose con la key como ENV (OPENAI_API_KEY)
+   *   3. Pasar el prompt por stdin (validamos que es lo que da output limpio)
+   *   4. Capturar stdout = respuesta del modelo
+   *   5. Auto-remover el container (--rm)
+   *
+   * El threat model de pasar la key por ENV es aceptable: quien puede hacer
+   * `docker inspect` en el host ya está comprometido; el container vive minutos.
+   *
+   * @param prompt - la tarea a ejecutar (se pasa por stdin)
+   * @param options.model - modelo (default: del config de LiteLLM, resuelto por el proxy)
+   * @param options.workspaceId - para resolver la key correcta en el futuro multi-tenant
+   * @param options.timeoutMs - timeout del container (default: 5 min)
+   * @returns el output del modelo (texto limpio de stdout)
+   */
+  async runEphemeralTask(
+    prompt: string,
+    options: {
+      model?: string
+      workspaceId?: string
+      timeoutMs?: number
+    } = {},
+  ): Promise<string> {
+    const image = process.env.HQ_AGENT_GOOSE_IMAGE || 'hq-agent-goose:latest'
+    const network = process.env.AGENT_NETWORK || 'hq-network'
+
+    // 1. Resolver la virtual key desde MongoDB (no desde .env)
+    const virtualKey = await litellmService.getKey(options.workspaceId)
+
+    // 2. Variables de entorno para el container efímero
+    const env: string[] = [
+      `OPENAI_API_KEY=${virtualKey}`,
+      // OPENAI_HOST y GOOSE_MODEL ya están baked en la imagen (litellm.ctangarife.com, glm-4.7)
+    ]
+    if (options.model) {
+      env.push(`GOOSE_MODEL=${options.model}`)
+    }
+
+    console.log(`[ephemeral] spawning Goose container for task (${prompt.length} chars)`)
+
+    // 3. Crear container efímero con auto-remove
+    const container = await docker.createContainer({
+      Image: image,
+      Env: env,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      OpenStdin: true,
+      Tty: false,
+      HostConfig: {
+        AutoRemove: true,  // --rm: el container se borra solo al terminar
+        NetworkMode: network,
+      },
+      Labels: {
+        'hq-managed': 'true',
+        'hq-agent-type': 'ephemeral-goose',
+      },
+    })
+
+    try {
+      await container.start()
+
+      // 4. Pasar el prompt por stdin ( Goose lee con -i - )
+      const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true })
+      stream.write(prompt)
+      stream.end()
+
+      // 5. Capturar stdout
+      const output = await this.captureContainerOutput(container, options.timeoutMs ?? 300000)
+      console.log(`[ephemeral] task completed (${output.length} chars output)`)
+      return output.trim()
+    } catch (error) {
+      // AutoRemove se encarga del cleanup, pero forzamos por si acaso
+      try { await container.remove({ force: true }) } catch {}
+      console.error('[ephemeral] task failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Capturar el stdout de un container hasta que termine o timeout.
+   * Filtra el banner ASCII de Goose (las líneas con "__(", "L L", etc.)
+   * dejando solo la respuesta del modelo.
+   */
+  private async captureContainerOutput(container: any, timeoutMs: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = []
+      let settled = false
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          try { container.kill() } catch {}
+          reject(new Error(`Ephemeral task timed out after ${timeoutMs}ms`))
+        }
+      }, timeoutMs)
+
+      container.wait().then(() => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          const raw = Buffer.concat(chunks).toString('utf-8')
+          // Filtrar el banner de Goose y líneas vacías iniciales
+          const cleaned = this.cleanGooseOutput(raw)
+          resolve(cleaned)
+        }
+      }).catch(reject)
+
+      // Capturar stdout vía log stream (follow hasta que el container termine)
+      container.logs({
+        stdout: true,
+        stderr: false,
+        follow: true,
+      }).then((logStream: any) => {
+        logStream.on('data', (chunk: Buffer) => chunks.push(chunk))
+        logStream.on('end', () => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            const raw = Buffer.concat(chunks).toString('utf-8')
+            resolve(this.cleanGooseOutput(raw))
+          }
+        })
+        logStream.on('error', (err: Error) => {
+          if (!settled) {
+            settled = true
+            clearTimeout(timer)
+            reject(err)
+          }
+        })
+      }).catch(reject)
+    })
+  }
+
+  /**
+   * Limpiar el output de Goose: quitar el banner ASCII art y metadata de sesión,
+   * dejando solo la respuesta del modelo.
+   *
+   * Goose imprime al arrancar:
+   *       __( O)>  ● new session · openai glm-4.7
+   *      \____)    20260617_1 · /workspace
+   *        L L     goose is ready
+   */
+  private cleanGooseOutput(raw: string): string {
+    const lines = raw.split('\n')
+    const cleaned: string[] = []
+    let pastBanner = false
+
+    for (const line of lines) {
+      // Detectar el fin del banner ("goose is ready")
+      if (!pastBanner) {
+        if (line.includes('goose is ready') || line.includes('new session')) {
+          continue
+        }
+        // Líneas del ASCII art del ganso
+        if (line.includes('__( O)>') || line.includes('\\____)') || line.includes('L L')) {
+          continue
+        }
+        pastBanner = true
+      }
+      cleaned.push(line)
+    }
+
+    return cleaned.join('\n').trim()
   }
 
   /**
