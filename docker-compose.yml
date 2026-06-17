@@ -11,6 +11,9 @@ services:
     image: mongo:8
     container_name: hq-mongodb
     restart: unless-stopped
+    # SELinux (Bazzite/Fedora): permite leer volumenes del host
+    security_opt:
+      - label=disable
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
@@ -104,6 +107,9 @@ services:
       context: ./build/frontend
       dockerfile: Dockerfile
     container_name: hq-frontend
+    # SELinux (Bazzite/Fedora): permite leer ./data/frontend del host
+    security_opt:
+      - label=disable
     volumes:
       # Código fuente
       - ./data/frontend:/app
@@ -123,6 +129,9 @@ services:
     image: nginx:alpine
     container_name: hq-nginx
     restart: unless-stopped
+    # SELinux (Bazzite/Fedora): patron Pentia - permite leer conf y static del host
+    security_opt:
+      - label=disable
     ports:
       - "${NGINX_HOST_PORT}:80"
       - "${NGINX_HEALTH_PORT}:8080"
