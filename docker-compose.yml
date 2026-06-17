@@ -41,6 +41,9 @@ services:
       dockerfile: Dockerfile
     container_name: hq-api
     restart: unless-stopped
+    # SELinux (Bazzite/Fedora): permite acceder al socket de podman montado
+    security_opt:
+      - label=disable
     environment:
       # MongoDB
       MONGODB_HOST: mongodb
@@ -83,8 +86,12 @@ services:
     volumes:
       # Código fuente para hot-reload en desarrollo
       - ./api/src:/app/src
-      # Docker socket para gestión de contenedores
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Runtime socket para gestión de contenedores.
+      # Usamos el socket rootless del usuario 1000 (no el system de root,
+      # que el compose rootless no puede montar). Para que funcione, la API
+      # corre como UID 1000 dentro del container (ver 'user:' abajo) — así
+      # coincide con el dueño del socket rootless (srw------- 1000:1000).
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
       # Workspace compartido con agentes
       - agent_workspace:${AGENT_WORKSPACE_PATH}
       # Mission files - Archivos de misiones (inputs, outputs, artifacts)
@@ -116,8 +123,10 @@ services:
       # Archivos estáticos compilados (para nginx)
       - ./data/static:/app/dist
     environment:
-      # API URL
+      # API URL (path relativo, via Nginx)
       VITE_API_URL: ${NEXT_PUBLIC_API_URL}
+      # UI_SECRET embebido en el bundle (patrón HQ: puerta compartida, no login)
+      VITE_UI_SECRET: ${UI_SECRET}
     command: sh -c "npm install && npm ci && NODE_ENV=production npm run build --max-old-space-size=4096"
     networks:
       - hq-network

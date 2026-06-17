@@ -9,8 +9,18 @@ const api = axios.create({
   }
 })
 
-// Auth header para requests
+// UI_SECRET compartido del deployment (inyectado por Vite en build-time).
+// Patrón HQ: la app entera comparte este secret como puerta de entrada,
+// NO es un login por-usuario. Si un hq_token está en localStorage (futuro
+// sistema de auth real), se envía además como Authorization.
+const UI_SECRET = import.meta.env.VITE_UI_SECRET || ''
+
 api.interceptors.request.use((config) => {
+  // x-ui-secret: puerta compartida del deployment (siempre que esté configurado)
+  if (UI_SECRET) {
+    config.headers['x-ui-secret'] = UI_SECRET
+  }
+  // Authorization: para futuro sistema de auth por-usuario (opcional)
   const token = localStorage.getItem('hq_token')
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
