@@ -107,12 +107,11 @@ class HQPollingSkill {
   constructor() {
     this.running = false;
     this.currentTask = null;
-    // Load API key from auth-profiles.json
-    this.apiKey = getApiKey(config.llmProvider);
-    if (!this.apiKey) {
-      throw new Error(`No API key found for provider: ${config.llmProvider}`);
-    }
-    console.log(`✅ API Key configurada para ${config.llmProvider} (desde auth-profiles.json)`);
+    // Ya no se necesita API key del provider: callLLM() habla al endpoint
+    // /llm-config/chat de HQ API, que resuelve la virtual key de LiteLLM
+    // internamente desde MongoDB. El provider/apiKey quedó legacy.
+    this.apiKey = null;
+    console.log('✅ Polling skill inicializado (LLM via HQ API → LiteLLM proxy)');
   }
 
   async sleep(ms) {
@@ -324,83 +323,31 @@ Responde SOLO con JSON (sin markdown, sin explicaciones):
   }
 
   async callLLM(messages) {
-    // Z.ai uses Anthropic Messages API format
-    const baseUrl = 'https://api.z.ai/api/anthropic';
-    const apiUrl = `${baseUrl}/v1/messages`;
+    // Los agentes persistentes (Squad Lead, Auditor) hablan al endpoint de HQ API,
+    // que enruta a LiteLLM proxy. Esto centraliza keys, budget y providers.
+    // Reemplaza el callLLM anterior que golpeaba Z.ai directo con x-api-key.
+    const chatUrl = `${config.hqApiUrl}/llm-config/chat`;
 
-    console.log('🔍 Using Z.ai Anthropic Messages API');
-    console.log('🔍 Model:', config.llmModel);
-    console.log('🔍 API URL:', apiUrl);
+    console.log('🔍 LLM call via HQ API → LiteLLM proxy');
     console.log('🔍 Messages:', messages.length);
 
-    // Extract system message and build messages array
-    let systemMessage = '';
-    const apiMessages = [];
-
-    for (const msg of messages) {
-      if (msg.role === 'system') {
-        systemMessage = msg.content;
-      } else if (msg.role === 'user' || msg.role === 'assistant') {
-        apiMessages.push({
-          role: msg.role,
-          content: msg.content
-        });
-      }
-    }
-
-    // Build payload for Anthropic Messages API
-    const payload = {
-      model: config.llmModel,
-      max_tokens: 4096,
-      messages: apiMessages
-    };
-
-    // Add system message if present
-    if (systemMessage) {
-      payload.system = systemMessage;
-    }
-
-    console.log('🔍 Request payload:', JSON.stringify(payload, null, 2).substring(0, 800));
-
-    // Call Z.ai API with Anthropic format
-    const response = await fetch(apiUrl, {
+    const response = await fetch(chatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${config.hqApiToken}`,
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ messages }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('❌ Z.ai API error:', error);
-      throw new Error(`Z.ai API error ${response.status}: ${error}`);
+      console.error('❌ HQ API /chat error:', error);
+      throw new Error(`HQ API chat error ${response.status}: ${error}`);
     }
 
-    const result = await response.json();
-    console.log('🔍 Z.ai Response structure:', JSON.stringify(result, null, 2).substring(0, 1500));
-
-    // Extract content from Anthropic response format
-    // Anthropic returns: { content: [{ type: "text", text: "..." }] }
-    if (result.content && Array.isArray(result.content)) {
-      const textBlock = result.content.find(block => block.type === 'text');
-      if (textBlock && textBlock.text) {
-        console.log('🔍 Extracted text length:', textBlock.text.length);
-        // Return in OpenAI-like format for consistency
-        return {
-          choices: [{
-            message: {
-              content: textBlock.text
-            }
-          }]
-        };
-      }
-    }
-
-    console.error('❌ Unknown response format, keys:', Object.keys(result));
-    throw new Error('Unknown Z.ai response format: ' + JSON.stringify(result).substring(0, 200));
+    // La API ya devuelve formato OpenAI-like: { choices: [{ message: { content } }] }
+    return await response.json();
   }
 
   /**

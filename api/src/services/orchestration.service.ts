@@ -9,6 +9,7 @@ import Mission from '../models/Mission.js'
 import { dockerService } from './docker.service.js'
 import { getSquadLeadTemplate, AGENT_TEMPLATES } from '../config/agent-templates.js'
 import { agentScoringService } from './agent-scoring.service.js'
+import { taskDispatcherService } from './task-dispatcher.service.js'
 import type {
   SquadLeadOutput,
   AgentDefinition,
@@ -402,6 +403,20 @@ export async function processSquadLeadOutput(
   }
 
   await mission.save()
+
+  // Dispatchar tareas de especialista listas (Goose efímero).
+  // Las tareas sin dependencias o con dependencias ya completas se ejecutan
+  // en paralelo, cada una en su propio container Goose efímero.
+  // Las que tienen dependencias pendientes esperarán (se dispatchan cuando
+  // su dependencia se complete — ver taskDispatcherService.executeSpecialistTask).
+  try {
+    taskDispatcherService.dispatchReadySpecialistTasks(mission._id.toString()).catch(err => {
+      console.error('Specialist task dispatch error (non-blocking):', err.message)
+    })
+  } catch (err: any) {
+    // Non-blocking: las tareas quedan pending y los agentes persistentes las tomarán
+    console.error('Failed to dispatch specialist tasks:', err.message)
+  }
 
   return { tasksCreated: createdTasks.length, agentsCreated }
 }

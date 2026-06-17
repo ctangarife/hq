@@ -37,6 +37,37 @@ router.get('/models', async (req, res, next) => {
   }
 })
 
+// POST /api/llm-config/chat - Chat completion via LiteLLM proxy
+//
+// Usado por los agentes persistentes (Squad Lead, Auditor) vía el polling
+// skill. Reemplaza el callLLM() hardcodeado a Z.ai que había antes.
+//
+// Body:
+//   { messages: [{role, content}, ...], model?: "glm-4.7", workspaceId?: "..." }
+router.post('/chat', async (req, res, next) => {
+  try {
+    const { messages, model, workspaceId, temperature, maxTokens } = req.body
+
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages (non-empty array) is required' })
+    }
+
+    const content = await litellmService.chatCompletion(messages, {
+      model,
+      workspaceId,
+      temperature,
+      maxTokens,
+    })
+
+    res.json({
+      choices: [{ message: { content } }],
+      // Format compatible con el callLLM del polling skill (OpenAI-like)
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // POST /api/llm-config - Crear nueva virtual key en LiteLLM + guardar en Mongo
 //
 // Body:
