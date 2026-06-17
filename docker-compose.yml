@@ -15,8 +15,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
-    ports:
-      - "27017:27017"
+    # Sin ports expuestos al host: MongoDB solo es alcanzable dentro de
+    # hq-network (patron Pentia: Nginx es el unico puerto de entrada).
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -75,8 +75,8 @@ services:
       # Logging
       LOG_LEVEL: ${LOG_LEVEL}
       LOG_CONSOLE: ${LOG_CONSOLE}
-    ports:
-      - "${API_PORT}:3001"
+    # Sin ports expuestos al host: la API solo es alcanzable via Nginx
+    # (/api/* -> http://api:3001 por red Docker interna).
     volumes:
       # Código fuente para hot-reload en desarrollo
       - ./api/src:/app/src
@@ -133,8 +133,10 @@ services:
       # Archivos estáticos del frontend
       - ./data/static:/usr/share/nginx/html/frontend:rw
     depends_on:
-      - api
-      - frontend
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/nginx-health"]
       interval: 30s
