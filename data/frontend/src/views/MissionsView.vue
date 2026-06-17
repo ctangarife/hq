@@ -4,6 +4,8 @@ import { missionsService, tasksService, attachmentsService, resourcesService, te
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
 import TaskDependencyGraph from '@/components/TaskDependencyGraph.vue'
+import AvatarImage from '@/components/AvatarImage.vue'
+import { getStyleForRole as getAvatarStyle } from '@/composables/useAgentAvatar'
 
 type MissionType = 'AUTO_ORCHESTRATED' | 'TEMPLATE_BASED' | 'MANUAL'
 
@@ -1350,7 +1352,7 @@ onMounted(() => {
 
           <!-- Agents to Create -->
           <div v-if="squadLeadPlan.agents && squadLeadPlan.agents.length > 0" class="bg-gray-900 rounded-lg p-4">
-            <h3 class="text-white font-semibold mb-3">🤖 Agentes a Crear</h3>
+            <h3 class="text-white font-semibold mb-3">Agentes a Crear</h3>
             <div class="grid grid-cols-2 gap-2">
               <div
                 v-for="agent in squadLeadPlan.agents"
@@ -1358,12 +1360,11 @@ onMounted(() => {
                 class="bg-gray-800 rounded p-3 border border-gray-700"
               >
                 <div class="flex items-center gap-2">
-                  <span class="text-xl">
-                    {{ agent.role === 'researcher' ? '🔍' :
-                       agent.role === 'developer' ? '💻' :
-                       agent.role === 'writer' ? '✍️' :
-                       agent.role === 'analyst' ? '📊' : '🤖' }}
-                  </span>
+                  <AvatarImage
+                    :seed="agent.name || agent.role"
+                    :style-key="getAvatarStyle(agent.role)"
+                    :size="40"
+                  />
                   <div>
                     <p class="text-white font-medium text-sm">{{ agent.name }}</p>
                     <p class="text-gray-500 text-xs">{{ agent.role }}</p>

@@ -8,11 +8,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "pinia": "^2.3.0",
+    "@dicebear/adventurer": "^9.4.2",
+    "@dicebear/avataaars": "^9.4.2",
+    "@dicebear/big-smile": "^9.4.2",
+    "@dicebear/bottts": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
+    "@dicebear/lorelei": "^9.4.2",
+    "@dicebear/pixel-art": "^9.4.2",
     "axios": "^1.7.9",
-    "pixi.js": "^8.2.5"
+    "pinia": "^2.3.0",
+    "pixi.js": "^8.2.5",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",

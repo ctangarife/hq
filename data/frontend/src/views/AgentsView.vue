@@ -3,6 +3,8 @@ import { ref, onMounted, watch } from "vue";
 import { agentsService, providersService } from "@/services/api";
 import AgentLogsViewer from "@/components/AgentLogsViewer.vue";
 import AgentMetricsDashboard from "@/components/AgentMetricsDashboard.vue";
+import AvatarImage from "@/components/AvatarImage.vue";
+import { getStyleForRole as getAvatarStyle } from "@/composables/useAgentAvatar";
 
 interface Agent {
   _id: string;
@@ -291,9 +293,16 @@ onMounted(() => {
         class="bg-gray-800 rounded-lg p-4 border border-gray-700"
       >
         <div class="flex justify-between mb-2">
-          <div>
-            <h3 class="text-xl font-semibold text-white">{{ agent.name }}</h3>
-            <p class="text-gray-400 text-sm">{{ agent.role }}</p>
+          <div class="flex items-center gap-3">
+            <AvatarImage
+              :seed="agent.name || agent.role"
+              :style-key="getAvatarStyle(agent.role)"
+              :size="48"
+            />
+            <div>
+              <h3 class="text-xl font-semibold text-white">{{ agent.name }}</h3>
+              <p class="text-gray-400 text-sm">{{ agent.role }}</p>
+            </div>
           </div>
           <span class="px-2 py-1 rounded text-xs bg-gray-700 text-gray-300">{{
             agent.status
