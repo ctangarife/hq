@@ -17,6 +17,8 @@ import resourcesRoutes from './routes/resources.js'
 import attachmentsRoutes from './routes/attachments.js'
 import missionTemplatesRoutes from './routes/mission-templates.routes.js'
 import llmConfigRoutes from './routes/llm-config.js'
+import workspaceRoutes from './routes/workspaces.js'
+import promptRoutes from './routes/prompts.js'
 
 // Credentials management - Eliminado (no necesitamos)
 // import configRoutes from './routes/config.js'
@@ -56,6 +58,8 @@ app.use('/api/resources', resourcesRoutes)
 app.use('/api/attachments', attachmentsRoutes)
 app.use('/api/mission-templates', missionTemplatesRoutes)
 app.use('/api/llm-config', llmConfigRoutes)
+app.use('/api/workspaces', workspaceRoutes)
+app.use('/api/prompts', promptRoutes)
 
 // Error handler
 app.use(errorHandler)

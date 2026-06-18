@@ -10,6 +10,10 @@ export interface IAgent extends Document {
   apiKey?: string
   containerId?: string
   status: 'idle' | 'busy' | 'offline' | 'active' | 'inactive'
+  // Multi-tenant: agentes pueden pertenecer a un workspace/proyecto
+  // (opcionales: agentes globales no tienen workspace)
+  workspaceId?: mongoose.Types.ObjectId
+  projectId?: mongoose.Types.ObjectId
   // Orchestration fields
   currentMissionId?: string
   missionHistory: string[]
@@ -33,7 +37,7 @@ const agentSchema = new Schema({
   personality: { type: String, default: 'You are a helpful AI assistant.' },
   capabilities: [{ type: String }],
   llmModel: { type: String, default: 'glm-4.7' },
-  provider: { type: String, default: 'zai' },
+  provider: { type: String, default: 'litellm' },
   apiKey: { type: String },
   containerId: { type: String },
   status: {
@@ -41,6 +45,9 @@ const agentSchema = new Schema({
     enum: ['idle', 'busy', 'offline', 'active', 'inactive'],
     default: 'inactive'
   },
+  // Multi-tenant
+  workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', index: true },
+  projectId: { type: Schema.Types.ObjectId, ref: 'Project', index: true },
   // Orchestration fields for Squad Lead flow
   currentMissionId: { type: String },
   missionHistory: [{ type: String }],

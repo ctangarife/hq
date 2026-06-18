@@ -8,6 +8,9 @@ export interface IMission extends Document {
   objective: string
   status: 'draft' | 'active' | 'paused' | 'completed'
   priority: 'high' | 'medium' | 'low'
+  // Multi-tenant: jerarquía Workspace → Project → Mission
+  workspaceId?: mongoose.Types.ObjectId
+  projectId?: mongoose.Types.ObjectId
   squadIds: mongoose.Types.ObjectId[]
   taskIds: mongoose.Types.ObjectId[]
   startedAt?: Date
@@ -50,6 +53,9 @@ const missionSchema = new Schema<IMission>({
     enum: ['high', 'medium', 'low'],
     default: 'medium'
   },
+  // Multi-tenant: opcionales para no romper missions existentes sin workspace
+  workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', index: true },
+  projectId: { type: Schema.Types.ObjectId, ref: 'Project', index: true },
   squadIds: [{ type: Schema.Types.ObjectId, ref: 'Agent' }],
   taskIds: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
   startedAt: { type: Date },

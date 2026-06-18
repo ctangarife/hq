@@ -20,12 +20,13 @@ import mongoose, { Schema, Document } from 'mongoose'
  *   - futuro: scope: 'user' → key por usuario humano
  */
 
-export type LLMConfigScope = 'global' | 'workspace' // | 'user' (futuro)
+export type LLMConfigScope = 'global' | 'workspace' | 'project'
 
 export interface LLMConfig {
   _id: string
   scope: LLMConfigScope
-  workspaceId?: string // Solo cuando scope === 'workspace'
+  workspaceId?: string // Solo cuando scope !== 'global'
+  projectId?: string   // Solo cuando scope === 'project'
   alias: string // Alias legible: "hq-global", "workspace-exito", etc.
   virtualKey: string // sk-... (la key real de LiteLLM)
   keyId?: string // token_id retornado por LiteLLM (para gestión/rotación)
@@ -43,10 +44,11 @@ const llmConfigSchema = new Schema<LLMConfig & Document>({
   scope: {
     type: String,
     required: true,
-    enum: ['global', 'workspace'],
+    enum: ['global', 'workspace', 'project'],
     default: 'global',
   },
   workspaceId: { type: String, index: true }, // Index para queries por workspace
+  projectId: { type: String, index: true },   // Index para queries por proyecto
   alias: { type: String, required: true, trim: true },
   virtualKey: { type: String, required: true },
   keyId: { type: String },
