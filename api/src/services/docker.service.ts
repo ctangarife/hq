@@ -38,11 +38,26 @@ export interface AgentConfig {
  */
 export class DockerService {
   /**
-   * Crear un nuevo contenedor para un agente OpenClaw
+   * Crear un nuevo contenedor para un agente.
+   *
+   * Selección de imagen por rol (arquitectura híbrida Goose):
+   *   - Orquestadores (squad_lead, auditor) → hq-agent-orchestrator (persistente,
+   *     proceso Node con polling loop que spawnea Goose por tarea).
+   *   - Especialistas (researcher, writer, developer, analyst) → hq-agent-goose
+   *     (efímero, 1 tarea = 1 container). En la práctica estos se ejecutan vía
+   *     runEphemeralTask(), pero createAgentContainer puede instanciarlos si
+   *     la arquitectura lo requiere.
    */
   async createAgentContainer(agentId: string, agent: AgentConfig): Promise<string> {
     const containerName = `hq-agent-${agentId}`
-    const image = process.env.AGENT_BASE_IMAGE || 'hq-agent:latest'
+
+    // Orquestadores (persistentes) vs especialistas (efímeros)
+    const ORCHESTRATOR_ROLES = ['squad_lead', 'auditor']
+    const isOrchestrator = ORCHESTRATOR_ROLES.includes(agent.role)
+    const image = isOrchestrator
+      ? process.env.HQ_AGENT_ORCHESTRATOR_IMAGE || 'hq-agent-orchestrator:latest'
+      : process.env.AGENT_BASE_IMAGE || 'hq-agent-goose:latest'
+
     const network = process.env.AGENT_NETWORK || 'hq-network'
     const workspacePath = process.env.AGENT_WORKSPACE_PATH || '/data/agent-workspace'
     const filesPath = process.env.HQ_FILES_PATH || '/data/hq-files'
@@ -61,6 +76,10 @@ export class DockerService {
       // MongoDB URI para que el agente pueda cargar API keys
       MONGO_URI: `mongodb://${process.env.MONGODB_USERNAME}:${process.env.MONGODB_PASSWORD}@mongodb:27017/${process.env.MONGODB_DATABASE}?authSource=admin`,
       HQ_API_URL: process.env.HQ_API_URL || 'http://api:3001/api',
+      // Token que el skill del orchestrator usa para autenticarse contra la
+      // API HQ al hacer polling y resolver prompts. El middleware de auth
+      // acepta cualquier Bearer token hoy (TODO: validar JWT de verdad).
+      HQ_API_TOKEN: process.env.HQ_API_TOKEN || 'hq-agent-token',
       // Path a archivos de misiones (read-only para inputs, write para task outputs)
       HQ_FILES_PATH: filesPath
     }

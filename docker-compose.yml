@@ -63,6 +63,7 @@ services:
       DOCKER_SOCKET: /var/run/docker.sock
       # Agent Config
       AGENT_BASE_IMAGE: ${AGENT_BASE_IMAGE}
+      HQ_AGENT_ORCHESTRATOR_IMAGE: ${HQ_AGENT_ORCHESTRATOR_IMAGE}
       AGENT_NETWORK: ${AGENT_NETWORK}
       AGENT_WORKSPACE_PATH: ${AGENT_WORKSPACE_PATH}
       HQ_FILES_PATH: ${HQ_FILES_PATH:-/data/hq-files}
@@ -170,6 +171,21 @@ services:
       context: ./docker/hq-agent-openclaw
       dockerfile: Dockerfile
     image: hq-agent-openclaw:latest
+    restart: "no"
+    profiles:
+      - build-only
+
+  # ---------------------------------------------------------------------------
+  # HQ AGENT ORCHESTRATOR (Goose-based) - Imagen persistente para Squad Lead/Auditor
+  # ---------------------------------------------------------------------------
+  # build-only: no levanta solo. docker.service.createAgentContainer la instancia
+  # cuando crea orquestadores (rol squad_lead / auditor). Diferente de la efímera
+  # hq-agent-goose: mantiene un proceso Node con polling loop continuo.
+  hq-agent-orchestrator:
+    build:
+      context: ./docker/hq-agent-orchestrator
+      dockerfile: Dockerfile
+    image: hq-agent-orchestrator:latest
     restart: "no"
     profiles:
       - build-only
