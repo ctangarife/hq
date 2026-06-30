@@ -1,6 +1,23 @@
 /**
  * Predefined Agent Templates
  * These templates are used by the Squad Lead to create specialized agents
+ *
+ * NOTA sobre .personality (desde la migración a prompts editables):
+ * El campo `personality` de cada template es un **fallback de bootstrap**. El
+ * fuente de verdad vivo está en la colección `prompts` (MongoDB), resuelto en
+ * runtime vía `promptService.getPrompt(role, ctx)` en orchestration.service.ts.
+ *
+ * Los agentes son efímeros: el prompt se resuelve UNA vez al instanciar el
+ * agente (no en cada tarea). Una edición en MongoDB se refleja la próxima vez
+ * que se crea un agente.
+ *
+ * Este fallback solo se usa si:
+ *   - MongoDB no tiene un prompt para esa key (no se seedeó), o
+ *   - la query a MongoDB falla (red caída, timeout).
+ * Así la creación de agentes nunca se bloquea por un fallo de resolución.
+ *
+ * El resto de campos (capabilities, defaultLlmModel, defaultProvider) son
+ * config estática y NO son editables vía prompts — siguen leyéndose de aquí.
  */
 
 import { AgentTemplate } from '../types/agent.types.js'

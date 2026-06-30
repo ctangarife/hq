@@ -8,6 +8,7 @@ import Task from '../models/Task.js'
 import Mission from '../models/Mission.js'
 import { dockerService } from './docker.service.js'
 import { getSquadLeadTemplate, AGENT_TEMPLATES } from '../config/agent-templates.js'
+import { promptService } from './prompt.service.js'
 import { agentScoringService } from './agent-scoring.service.js'
 import { taskDispatcherService } from './task-dispatcher.service.js'
 import type {
@@ -62,10 +63,31 @@ export async function selectSquadLead(missionId: string): Promise<Agent> {
 
   // Third option: Create new Squad Lead
   const template = getSquadLeadTemplate()
+
+  // Resolver el contexto multi-tenant de la misión para resolver el prompt
+  // por capas (project → workspace → global). Si la misión no tiene workspace,
+  // promptService.getPrompt() hace fallback al prompt global.
+  const mission = await Mission.findById(missionId).lean()
+  const agentName = `Squad Lead ${Date.now()}`
+
+  // Resolver el personality desde MongoDB (fuente de verdad vivo). Fallback
+  // defensivo al template hardcoded si MongoDB falla o no hay prompt seedeado:
+  // la creación del agente NUNCA debe bloquearse por resolución de prompt.
+  let personality = template.personality
+  try {
+    personality = await promptService.getPrompt('squad_lead', {
+      agentName,
+      workspaceId: mission?.workspaceId?.toString(),
+      projectId: mission?.projectId?.toString(),
+    })
+  } catch (err: any) {
+    console.warn(`[orchestration] promptService.getPrompt('squad_lead') failed, using template fallback: ${err.message}`)
+  }
+
   const newSquadLead = new Agent({
-    name: `Squad Lead ${Date.now()}`,
+    name: agentName,
     role: template.role,
-    personality: template.personality,
+    personality,
     capabilities: template.capabilities,
     llmModel: template.defaultLlmModel,
     provider: template.defaultProvider,
@@ -246,10 +268,24 @@ export async function processSquadLeadOutput(
     try {
       const template = AGENT_TEMPLATES[agentDef.template || agentDef.role]
 
+      // Resolver el personality desde MongoDB por capas (multi-tenant).
+      // El template actúa como fallback defensivo: si MongoDB no tiene prompt
+      // para ese rol, o la query falla, se usa el hardcoded para no bloquear.
+      let personality = template?.personality || 'You are a helpful AI assistant.'
+      try {
+        personality = await promptService.getPrompt(agentDef.role, {
+          agentName: agentDef.name,
+          workspaceId: mission.workspaceId?.toString(),
+          projectId: mission.projectId?.toString(),
+        })
+      } catch (err: any) {
+        console.warn(`[orchestration] promptService.getPrompt('${agentDef.role}') failed, using template fallback: ${err.message}`)
+      }
+
       const newAgent = new Agent({
         name: agentDef.name,
         role: agentDef.role,
-        personality: template?.personality || 'You are a helpful AI assistant.',
+        personality,
         capabilities: agentDef.capabilities,
         llmModel: agentDef.llmModel || template?.defaultLlmModel || 'glm-4.7',
         provider: template?.defaultProvider || 'zai',

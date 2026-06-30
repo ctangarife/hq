@@ -123,6 +123,14 @@ class TaskDispatcherService {
    * Construir el prompt que se pasa a Goose para una tarea de especialista.
    * Combina la personalidad del agente (template) con los datos de la tarea.
    *
+   * CONTRACTO sobre agent.personality (importante):
+   * El `personality` del agente YA fue resuelto desde MongoDB
+   * (promptService.getPrompt) en el momento de crearlo — ver
+   * orchestration.service.ts → processSquadLeadOutput(). Los agentes son
+   * efímeros, así que NO se re-resuelve el prompt aquí en cada tarea: una
+   * edición en la colección `prompts` se refleja la próxima vez que se crea
+   * un agente, no en medio de una misión en curso.
+   *
    * Goose recibe todo por stdin como un prompt plano.
    */
   private buildSpecialistPrompt(task: ITask, agent: any): string {
