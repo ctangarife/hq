@@ -196,4 +196,38 @@ export const templatesService = {
   initializeSystem: () => api.post('/mission-templates/initialize-system')
 }
 
+// =====================================================================
+// Admin Services (multi-tenant: workspaces, prompts, llm keys)
+// =====================================================================
+
+// Workspaces + Projects (jerarquía multi-tenant)
+export const workspacesService = {
+  getAll: () => api.get('/workspaces'),
+  getById: (id: string) => api.get(`/workspaces/${id}`),
+  create: (data: any) => api.post('/workspaces', data),
+  update: (id: string, data: any) => api.patch(`/workspaces/${id}`, data),
+  delete: (id: string) => api.delete(`/workspaces/${id}`),
+  // Proyectos dentro de un workspace
+  getProjects: (id: string) => api.get(`/workspaces/${id}/projects`),
+  createProject: (workspaceId: string, data: any) => api.post(`/workspaces/${workspaceId}/projects`, data),
+}
+
+// Prompts editables (resolución por capas: project → workspace → global)
+export const promptsService = {
+  // Listar con filtros opcionales (?key, ?scope, ?workspaceId, ?projectId)
+  getAll: (filters?: Record<string, string>) => api.get('/prompts', { params: filters }),
+  // Resolver un prompt por capas con variables reemplazadas (preview en vivo)
+  resolve: (key: string, variables?: Record<string, string>) =>
+    api.get(`/prompts/resolve/${key}`, { params: variables }),
+  // Crear o actualizar (upsert)
+  upsert: (data: any) => api.post('/prompts', data),
+  // Desactivar (soft delete)
+  delete: (id: string) => api.delete(`/prompts/${id}`),
+}
+
+// LLM Config (virtual keys de LiteLLM, enmascaradas en la respuesta)
+export const llmConfigService = {
+  getAll: () => api.get('/llm-config'),
+}
+
 export default api
