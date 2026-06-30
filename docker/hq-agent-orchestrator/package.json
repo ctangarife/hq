@@ -1,0 +1,13 @@
+{
+  "name": "hq-agent-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persistent polling skill for HQ orchestrator agents (Squad Lead, Auditor)",
+  "main": "hq-polling-skill.cjs",
+  "scripts": {
+    "start": "node /app/hq-polling-skill.cjs"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}

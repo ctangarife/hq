@@ -1,0 +1,19 @@
+# ==============================================================================
+# Goose Provider Configuration - HQ Orchestrator (via LiteLLM proxy)
+# ==============================================================================
+# Imagen PERSISTENTE para orquestadores (Squad Lead, Auditor). A diferencia de
+# hq-agent-goose (efímero, 1 tarea), esta imagen mantiene un proceso Node.js
+# con polling loop continuo, e invoca Goose como subprocess para cada LLM call.
+#
+# HQ centraliza TODOS los LLM calls a través del proxy LiteLLM en
+# litellm.ctangarife.com. La virtual key se inyecta en runtime como
+# OPENAI_API_KEY (la API de HQ la pasa al crear el container). El provider es
+# 'openai' porque el proxy expone endpoint 100% OpenAI-compatible.
+#
+# NOTA: Goose añade /v1/chat/completions al OPENAI_HOST automáticamente,
+# por eso el host NO lleva sufijo /v1.
+# ==============================================================================
+
+# --- Provider: openai-compatible apuntando a LiteLLM ---
+GOOSE_PROVIDER: openai
+GOOSE_MODEL: glm-4.7
