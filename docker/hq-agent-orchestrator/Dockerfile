@@ -74,8 +74,10 @@ WORKDIR /app
 COPY package.json /app/package.json
 RUN npm install --omit=dev && npm cache clean --force
 
-# Copiar el polling skill porteado y el entrypoint
+# Copiar el polling skill + módulos refactorizados + entrypoint
 COPY hq-polling-skill.cjs /app/hq-polling-skill.cjs
+COPY lib/ /app/lib/
+COPY handlers/ /app/handlers/
 COPY entrypoint.sh /app/entrypoint.sh
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
