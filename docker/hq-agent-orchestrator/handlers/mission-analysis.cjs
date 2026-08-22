@@ -79,29 +79,31 @@ Crea el plan JSON con la siguiente información.`;
 
 /**
  * Intentar parsear JSON de la respuesta del LLM, tolerante a markdown
- * code blocks y a JSON embebido en texto.
+ * code blocks, JSON embebido en texto, y trailing commas (un mal habitual
+ * de los LLMs que rompe JSON.parse estricto).
  *
  * @returns {object|null} el JSON parseado, o null si no se pudo extraer
  */
 function parseJsonFromContent(content) {
-  // 1. Parse directo
-  try {
-    return JSON.parse(content);
-  } catch {}
+  const candidates = [];
+
+  // 1. JSON directo
+  candidates.push(content);
 
   // 2. Code block ```json ... ```
   const jsonMatch = content.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[1]);
-    } catch {}
-  }
+  if (jsonMatch) candidates.push(jsonMatch[1]);
 
   // 3. Cualquier objeto { ... } en el texto
   const objectMatch = content.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
+  if (objectMatch) candidates.push(objectMatch[0]);
+
+  for (const candidate of candidates) {
+    // Sanitizar trailing commas: {...,} o [...,] — JSON inválido que los
+    // LLMs generan con frecuencia. JSON5-style tolerance mínima.
+    const sanitized = candidate.replace(/,\s*([}\]])/g, '$1');
     try {
-      return JSON.parse(objectMatch[0]);
+      return JSON.parse(sanitized);
     } catch {}
   }
 
@@ -157,8 +159,18 @@ function generateQuestionsForMission(task) {
 /**
  * Procesar un plan JSON ya parseado: validar estructura, completar la tarea
  * y disparar el processSquadOutput en la API.
+ *
+ * Tolerante a dos schemas (el LLM puede seguir cualquiera de los dos):
+ *   A) { tasks, agents } en raíz (el que pide PLAN_FALLBACK)
+ *   B) { analysis, sufficient_info, plan: { tasks, agents } } (el que define
+ *      el prompt seed de MongoDB 'mission_analysis')
  */
-async function processMissionPlan(task, plan, startTime) {
+async function processMissionPlan(task, rawPlan, startTime) {
+  // Normalizar schema B → A: si no hay tasks raíz pero sí plan.tasks, usar el anidado
+  const plan = (!Array.isArray(rawPlan.tasks) && rawPlan.plan && Array.isArray(rawPlan.plan.tasks))
+    ? { ...rawPlan.plan, needsMoreInfo: rawPlan.needsMoreInfo ?? rawPlan.sufficient_info === false, questions: rawPlan.questions }
+    : rawPlan;
+
   // ¿El plan pide más info explícitamente?
   if (plan.needsMoreInfo === true && Array.isArray(plan.questions)) {
     console.log('❓ Squad Lead needs more information:');
@@ -175,7 +187,7 @@ ${plan.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
   // Validar estructura mínima
   if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
-    throw new Error('Invalid plan: "tasks" array missing or empty. Got: ' + JSON.stringify(plan).slice(0, 200));
+    throw new Error('Invalid plan: "tasks" array missing or empty. Got: ' + JSON.stringify(rawPlan).slice(0, 200));
   }
   if (!Array.isArray(plan.agents) || plan.agents.length === 0) {
     throw new Error('Invalid plan: "agents" array missing or empty');

@@ -28,23 +28,20 @@ const { config } = require('./config.cjs');
  */
 function cleanGooseOutput(raw) {
   const lines = raw.split('\n');
-  const cleaned = [];
-  let pastBanner = false;
 
-  for (const line of lines) {
-    if (!pastBanner) {
-      if (line.includes('goose is ready') || line.includes('new session')) {
-        continue;
-      }
-      if (line.includes('__( O)>') || line.includes('\\____)') || line.includes('L L')) {
-        continue;
-      }
-      pastBanner = true;
-    }
-    cleaned.push(line);
-  }
+  // Patrones del banner de Goose. Se filtran en CUALQUIER posición (no solo
+  // al inicio) porque el stdout puede traer líneas vacías antes del banner,
+  // lo que rompía la lógica anterior de "pastBanner". El contenido real de
+  // una tarea nunca contiene estos artefactos ASCII.
+  const BANNER_PATTERNS = [
+    (l) => l.includes('goose is ready') || l.includes('new session'),
+    (l) => l.includes('__( O)>') || l.includes('\\____)') || /\bL L\b/.test(l),
+  ];
 
-  return cleaned.join('\n').trim();
+  return lines
+    .filter((line) => !BANNER_PATTERNS.some((match) => match(line)))
+    .join('\n')
+    .trim();
 }
 
 /**
