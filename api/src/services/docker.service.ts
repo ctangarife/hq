@@ -299,25 +299,25 @@ export class DockerService {
    */
   private cleanGooseOutput(raw: string): string {
     const lines = raw.split('\n')
-    const cleaned: string[] = []
-    let pastBanner = false
 
-    for (const line of lines) {
-      // Detectar el fin del banner ("goose is ready")
-      if (!pastBanner) {
-        if (line.includes('goose is ready') || line.includes('new session')) {
-          continue
-        }
-        // Líneas del ASCII art del ganso
-        if (line.includes('__( O)>') || line.includes('\\____)') || line.includes('L L')) {
-          continue
-        }
-        pastBanner = true
-      }
-      cleaned.push(line)
-    }
+    // Banner de Goose (en cualquier posición — puede haber líneas vacías antes)
+    const bannerPatterns = [
+      (l: string) => l.includes('goose is ready') || l.includes('new session'),
+      (l: string) => l.includes('__( O)>') || l.includes('\\____)') || /\bL L\b/.test(l),
+    ]
 
-    return cleaned.join('\n').trim()
+    // Ruido de tool-use (todo_write etc.): llamadas ▸ tool, separadores y
+    // bloques "content:" con sangría. El entregable real nunca los contiene.
+    const toolNoise = [
+      (l: string) => /^\s*▸/.test(l),
+      (l: string) => /^\s*─{10,}\s*$/.test(l),
+      (l: string) => /^\s{4,}content:/.test(l),
+    ]
+
+    const isNoise = (l: string) =>
+      bannerPatterns.some((m) => m(l)) || toolNoise.some((m) => m(l))
+
+    return lines.filter((l) => !isNoise(l)).join('\n').trim()
   }
 
   /**

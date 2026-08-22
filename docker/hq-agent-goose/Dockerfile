@@ -56,6 +56,13 @@ COPY config.yaml /config/goose/config.yaml
 ENV OPENAI_HOST=https://litellm.ctangarife.com
 ENV GOOSE_MODEL=glm-4.7
 
+# Desactivar las developer/file tools de Goose (write/edit/todo/shell):
+# el efímero debe responder SOLO con texto. Con tools activas, el modelo
+# "planifica" y escribe archivos — el stdout captura el proceso en vez del
+# entregable (validado empíricamente: con GOOSE_FILE=false el output es el
+# contenido limpio).
+ENV GOOSE_FILE=false
+
 # Workspace efímero (donde goose escribe si la tarea genera archivos)
 RUN mkdir -p /workspace
 WORKDIR /workspace

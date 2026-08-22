@@ -66,6 +66,12 @@ COPY config.yaml /config/goose/config.yaml
 ENV OPENAI_HOST=https://litellm.ctangarife.com
 ENV GOOSE_MODEL=glm-4.7
 
+# Desactivar las developer/file tools de Goose: el polling skill del
+# orchestrator espera respuestas de TEXTO (JSON del plan, decisiones del
+# auditor, entregables). Con tools activas el output llega contaminado con
+# todo_write/write (mismo fix que la imagen efímera).
+ENV GOOSE_FILE=false
+
 # Directorio de la app
 WORKDIR /app
 

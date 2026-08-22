@@ -98,6 +98,19 @@ class HQPollingSkill {
    * Combina la personalidad del agente con los datos de la tarea.
    */
   async executeTaskWithLLM(task) {
+    // Instrucción de entrega PRIMERO (máximo peso): el modelo debe entregar
+    // el contenido final, no planificarlo. Sin esto glm-4.7+Goose responde
+    // con planes/TODOs en vez del entregable.
+    let prompt = `ENTREGA DIRECTAMENTE EL CONTENIDO FINAL PEDIDO. Tu respuesta ES el entregable — no un plan, no un análisis, no una propuesta.
+
+`;
+    prompt += `# Tarea: ${task.title}\n\n`;
+    if (task.description) prompt += `Descripción: ${task.description}\n\n`;
+    if (task.input && Object.keys(task.input).length > 0) {
+      prompt += `Datos de entrada:\n${JSON.stringify(task.input, null, 2)}\n\n`;
+    }
+    prompt += `Por favor ejecuta esta tarea y reporta SOLO el resultado final en español.`;
+
     const messages = [
       {
         role: 'system',
@@ -105,13 +118,6 @@ class HQPollingSkill {
           `Eres ${config.agentName}, ${config.agentRole}. Responde SIEMPRE en español de forma concisa y útil.`,
       },
     ];
-
-    let prompt = `# Tarea: ${task.title}\n\n`;
-    if (task.description) prompt += `Descripción: ${task.description}\n\n`;
-    if (task.input && Object.keys(task.input).length > 0) {
-      prompt += `Datos de entrada:\n${JSON.stringify(task.input, null, 2)}\n\n`;
-    }
-    prompt += `Por favor ejecuta esta tarea y reporta el resultado en español.`;
 
     // Web scraping para web_search
     prompt = await this.enrichWithWebContent(task, prompt);

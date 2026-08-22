@@ -38,8 +38,18 @@ function cleanGooseOutput(raw) {
     (l) => l.includes('__( O)>') || l.includes('\\____)') || /\bL L\b/.test(l),
   ];
 
+  // Ruido de tool-use (todo_write etc.): llamadas ▸ tool, separadores ────
+  // y bloques "content:" con sangría de 4+. El texto de un entregable real
+  // nunca contiene estos patrones.
+  const TOOL_NOISE = [
+    (l) => /^\s*▸/.test(l),
+    (l) => /^\s*─{10,}\s*$/.test(l),
+    (l) => /^\s{4,}content:/.test(l),
+  ];
+
   return lines
-    .filter((line) => !BANNER_PATTERNS.some((match) => match(line)))
+    .filter((line) => !BANNER_PATTERNS.some((m) => m(line)))
+    .filter((line) => !TOOL_NOISE.some((m) => m(line)))
     .join('\n')
     .trim();
 }
