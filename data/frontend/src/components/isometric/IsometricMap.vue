@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Application, Container, Graphics, Text } from 'pixi.js'
-import { RobotSprite, AGENT_COLORS } from './RobotSprite'
+import { Application, Container, Graphics, Text, FillGradient } from 'pixi.js'
+import { AgentAvatarSprite } from './AgentAvatarSprite'
 import { FurnitureDrawer } from './FurnitureDrawer'
 
 interface Agent {
@@ -45,7 +45,7 @@ let app: Application | null = null
 let mapContainer: Container | null = null
 let floorContainer: Container | null = null
 let furnitureContainer: Container | null = null
-const robotSprites = new Map<string, RobotSprite>()
+const robotSprites = new Map<string, AgentAvatarSprite>()
 
 // Zonas del mapa HQ - actualizadas para los tres estados de trabajo
 const zones: Zone[] = [
@@ -85,13 +85,24 @@ async function initPixi() {
   await app.init({
     width: canvasContainer.value.clientWidth,
     height: canvasContainer.value.clientHeight,
-    backgroundColor: 0x111827,
+    backgroundColor: 0x0B1220,
     antialias: true,
     resolution: window.devicePixelRatio || 1,
     autoDensity: true
   })
 
   canvasContainer.value.appendChild(app.canvas)
+
+  // Fondo ambiental: gradiente vertical sutil (cielo del bar) detrás del piso
+  const bgGradient = new FillGradient(0, 0, 0, app.canvas.height)
+  bgGradient.addColorStop(0, 0x111C33)   // arriba: azul noche
+  bgGradient.addColorStop(0.65, 0x0D1526)
+  bgGradient.addColorStop(1, 0x080D18)   // abajo: más oscuro (viñeta)
+  const bg = new Graphics()
+  bg.beginPath()
+  bg.rect(0, 0, app.canvas.width, app.canvas.height)
+  bg.fill(bgGradient)
+  app.stage.addChild(bg)
 
   mapContainer = new Container()
   mapContainer.x = app.canvas.width / 2
@@ -281,19 +292,6 @@ function getAgentPosition(agent: Agent): { x: number; y: number } {
   return { x: zone.x + offsetX, y: zone.y + offsetY }
 }
 
-function getAgentColor(agent: Agent): number {
-  const roleColors: Record<string, number> = {
-    squad_lead: 0x8B5CF6,  // Purple for Squad Leads
-    coder: AGENT_COLORS.coder,
-    developer: AGENT_COLORS.coder,
-    researcher: AGENT_COLORS.researcher,
-    planner: AGENT_COLORS.planner,
-    reviewer: AGENT_COLORS.reviewer,
-    manager: AGENT_COLORS.planner
-  }
-  return roleColors[agent.role?.toLowerCase() || ''] || AGENT_COLORS.default
-}
-
 function getRobotState(agent: Agent): 'idle' | 'walking' | 'working' | 'error' | 'happy' {
   if (agent.status === 'failed' || agent.status === 'error') return 'error'
   if (agent.status === 'offline' || agent.status === 'inactive') return 'idle'
@@ -324,8 +322,7 @@ function updateAgentSprites() {
     const newPos = getAgentPosition(agent)
 
     if (!sprite) {
-      const color = getAgentColor(agent)
-      sprite = new RobotSprite(agent.name, color)
+      sprite = new AgentAvatarSprite(agent.name, agent.role || '')
       sprite.eventMode = 'static'
       sprite.on('pointerdown', () => emit('agentClick', agent))
 
