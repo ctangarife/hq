@@ -137,7 +137,13 @@ class TaskDispatcherService {
     const personality = agent?.personality ||
       'You are a helpful AI assistant. Respond in Spanish.'
 
-    let prompt = `${personality}\n\n`
+    // La instrucción de output va PRIMERO: es la que más pesa en el modelo.
+    // glm-4.7+Goose tiende a "planificar" o "delegar" la tarea en vez de
+    // ejecutarla; sin esto el entregable llega contaminado con planes/TODOs.
+    let prompt = `ENTREGA DIRECTAMENTE EL CONTENUTO FINAL PEDIDO. Tu respuesta ES el entregable — no un plan, no un análisis, no una propuesta. Si te piden un post, tu respuesta empieza con el post mismo.
+
+`
+    prompt += `${personality}\n\n`
     prompt += `# Tarea: ${task.title}\n\n`
 
     if (task.description) {

@@ -34,32 +34,16 @@ REGLAS:
 
 NO generes contenido. NO expliques. SOLO una de las dos palabras.`;
 
-const PLAN_FALLBACK = `Crea un plan de ejecución detallado para esta misión:
-
-Genera un JSON con este formato:
+const PLAN_FALLBACK = `Formato del plan JSON (descripciones de UNA línea):
 {
   "needsMoreInfo": false,
   "complexity": "low|medium|high|critical",
-  "summary": "Breve resumen del enfoque",
-  "estimatedDuration": 123,
+  "summary": "una línea",
   "tasks": [
-    {
-      "id": "task-1",
-      "title": "Título de la tarea",
-      "description": "Descripción específica de qué hacer",
-      "type": "web_search|data_analysis|content_generation|code_execution|custom",
-      "dependencies": [],
-      "priority": "high|medium|low",
-      "assignedAgentRole": "researcher|developer|writer|analyst"
-    }
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|writer|analyst"}
   ],
   "agents": [
-    {
-      "id": "agent-1",
-      "name": "Nombre del agente",
-      "role": "researcher|developer|writer|analyst",
-      "capabilities": ["capability1", "capability2"]
-    }
+    {"id": "agent-1", "name": "...", "role": "researcher|developer|writer|analyst", "capabilities": ["una"]}
   ]
 }`;
 
@@ -338,19 +322,31 @@ ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
 /** Step 2: segunda llamada que genera el plan JSON. */
 async function generatePlan(task, startTime) {
-  const planSystemPrompt = await resolvePrompt('mission_analysis', PLAN_FALLBACK, {
-    agentName: config.agentName,
-  });
-
-  const planPrompt = `Crea un plan de ejecución detallado para esta misión:
+  // Prompt COMPACTO: pedir descripciones de una línea y una sola instancia
+  // del formato. El prompt verboso anterior (formato duplicado en system+user)
+  // inducía respuestas largas que el modelo truncaba a mitad de JSON.
+  const planPrompt = `Crea un plan de ejecución para esta misión.
 
 Título: ${task.title}
 Descripción: ${task.description || ''}
 
-${PLAN_FALLBACK}`;
+Responde SOLO un JSON compacto (sin markdown, sin texto extra), con
+descripciones de UNA línea:
+
+{
+  "needsMoreInfo": false,
+  "complexity": "low|medium|high|critical",
+  "summary": "una línea",
+  "tasks": [
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|writer|analyst"}
+  ],
+  "agents": [
+    {"id": "agent-1", "name": "...", "role": "researcher|developer|writer|analyst", "capabilities": ["una"]}
+  ]
+}`;
 
   const secondResult = await callGoose([
-    { role: 'system', content: planSystemPrompt },
+    { role: 'system', content: 'Eres un planificador experto. Respondes SOLO JSON válido y compacto, en español, sin markdown.' },
     { role: 'user', content: planPrompt },
   ]);
   const secondContent = secondResult.choices?.[0]?.message?.content || '';
