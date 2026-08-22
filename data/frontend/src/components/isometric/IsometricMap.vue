@@ -275,21 +275,41 @@ function getAgentZone(agent: Agent): string {
   }
 }
 
-function getAgentPosition(agent: Agent): { x: number; y: number } {
-  const zoneId = getAgentZone(agent)
+// Distribuir los agentes de una zona en GRILLA determinista (slots ordenados
+// con separación garantizada, centrados en la zona). Reemplaza al hash
+// pseudo-aleatorio anterior que amontonaba avatares cuando coincidían slots.
+function getAgentsInZonePositions(zoneId: string): Map<string, { x: number; y: number }> {
+  const positions = new Map<string, { x: number; y: number }>()
+  const inZone = props.agents.filter(agent => getAgentZone(agent) === zoneId)
+  const total = inZone.length
+  if (total === 0) return positions
+
   const zone = zones.find(z => z.id === zoneId)!
 
-  // Posición aleatoria pero consistente dentro de la zona
-  const hash = agent._id.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)
+  // Columnas: raíz del total, máx 4 por fila (más de 4 se apila en filas)
+  const cols = Math.min(Math.max(Math.ceil(Math.sqrt(total)), 1), 4)
+  const rows = Math.ceil(total / cols)
 
-  // Ajustar el rango según el tamaño de la zona
-  const rangeX = zone.width * 0.35  // 35% del ancho para márgenes
-  const rangeY = zone.height * 0.35  // 35% del alto para márgenes
+  // Separación dentro del 70% de la zona (15% de margen por lado)
+  const spacingX = cols > 1 ? (zone.width * 0.7) / (cols - 1) : 0
+  const spacingY = rows > 1 ? (zone.height * 0.7) / (rows - 1) : 0
 
-  const offsetX = (hash % 100 - 50) / 100 * rangeX
-  const offsetY = ((hash >> 8) % 100 - 50) / 100 * rangeY
+  inZone.forEach((agent, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    positions.set(agent._id, {
+      x: zone.x + (col - (cols - 1) / 2) * spacingX,
+      y: zone.y + (row - (rows - 1) / 2) * spacingY,
+    })
+  })
 
-  return { x: zone.x + offsetX, y: zone.y + offsetY }
+  return positions
+}
+
+function getAgentPosition(agent: Agent): { x: number; y: number } {
+  const zoneId = getAgentZone(agent)
+  const positions = getAgentsInZonePositions(zoneId)
+  return positions.get(agent._id) || { x: 0, y: 0 }
 }
 
 function getRobotState(agent: Agent): 'idle' | 'walking' | 'working' | 'error' | 'happy' {

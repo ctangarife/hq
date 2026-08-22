@@ -122,7 +122,7 @@ export class AgentAvatarSprite extends Container {
   private onMovementComplete: (() => void) | null = null
 
   // Layout: el avatar se ancla con el piso en y=0, el sprite sube desde ahí
-  private static readonly AVATAR_SIZE = 64
+  private static readonly AVATAR_SIZE = 56
 
   constructor(name: string, role: string = '') {
     super()
@@ -233,10 +233,10 @@ export class AgentAvatarSprite extends Container {
     const color = AGENT_COLORS[this._role] ?? AGENT_COLORS.default
     g.clear()
     g.beginPath()
-    g.circle(0, -26, 20)
+    g.circle(0, -24, 18)
     g.fill({ color, alpha: 0.85 })
     g.beginPath()
-    g.circle(0, -26, 20)
+    g.circle(0, -24, 18)
     g.stroke({ width: 2, color: 0x0F172A, alpha: 0.6 })
   }
 
