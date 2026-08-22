@@ -282,6 +282,12 @@ export async function processSquadLeadOutput(
         console.warn(`[orchestration] promptService.getPrompt('${agentDef.role}') failed, using template fallback: ${err.message}`)
       }
 
+      // Especialistas SIN container persistente: son efímeros por diseño
+      // (arquitectura híbrida Goose — cada tarea corre en su propio container
+      // vía taskDispatcherService.runEphemeralTask). Un container persistente
+      // para un especialista es inútil (muere al instante por EOF de stdin)
+      // y dañino: la RestartPolicy unless-stopped lo revive en bucle infinito
+      // consumiendo ~60MB RAM y CPU del host en cada ciclo.
       const newAgent = new Agent({
         name: agentDef.name,
         role: agentDef.role,
@@ -293,31 +299,11 @@ export async function processSquadLeadOutput(
         currentMissionId: mission._id.toString(),
         missionHistory: [],
         totalMissionsCompleted: 0,
-        status: 'inactive'
+        // 'idle' = disponible en el pool; el dispatcher lo invoca por tarea
+        status: 'idle'
       })
 
       await newAgent.save()
-
-      // Deploy container
-      try {
-        const containerId = await dockerService.createAgentContainer(
-          newAgent._id.toString(),
-          {
-            name: newAgent.name,
-            role: newAgent.role,
-            personality: newAgent.personality,
-            llmModel: newAgent.llmModel,
-            provider: newAgent.provider
-          }
-        )
-        newAgent.containerId = containerId
-        newAgent.status = 'active'
-        await newAgent.save()
-      } catch (dockerError) {
-        console.error(`Failed to create container for agent ${newAgent.name}:`, dockerError)
-        newAgent.status = 'offline'
-        await newAgent.save()
-      }
 
       agentMap.set(agentDef.id, newAgent._id.toString())
       agentsCreated++
