@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { activityService, agentsService } from '@/services/api'
+import { activityService, agentsService, tasksService } from '@/services/api'
 import IsometricMap from '@/components/isometric/IsometricMap.vue'
 
 interface Activity {
@@ -46,11 +46,18 @@ const selectedAgent = ref<Agent | null>(null)
 const selectedZone = ref<string | null>(null)
 const showActivityLog = ref(true)
 
-const typeColors = {
-  mission: 'text-blue-400 bg-blue-900/30 border-blue-800',
-  task: 'text-green-400 bg-green-900/30 border-green-800',
-  agent: 'text-purple-400 bg-purple-900/30 border-purple-800',
-  container: 'text-yellow-400 bg-yellow-900/30 border-yellow-800'
+// Filtro activo del feed ('' = todos)
+const activeFilter = ref('')
+
+// Ticker para refrescar timestamps relativos cada 30s
+const now = ref(Date.now())
+let ticker: number | null = null
+
+const typeBars = {
+  mission: 'border-l-blue-500',
+  task: 'border-l-green-500',
+  agent: 'border-l-purple-500',
+  container: 'border-l-yellow-500'
 }
 
 const typeIcons = {
@@ -60,17 +67,77 @@ const typeIcons = {
   container: '📦'
 }
 
-// Format timestamp safely
-const formatTimestamp = (timestamp: string | Date | undefined) => {
+const filterOptions = [
+  { id: '', label: 'Todos', icon: '.stack' },
+  { id: 'mission', label: 'Misiones', icon: '🎯' },
+  { id: 'task', label: 'Tareas', icon: '✓' },
+  { id: 'agent', label: 'Agentes', icon: '🤖' },
+  { id: 'container', label: 'Containers', icon: '📦' }
+]
+
+// ── Helpers de tiempo ──
+
+// Timestamp relativo: "hace 30s", "hace 5 min", "hace 2 h", "21/8 19:38"
+const timeAgo = (timestamp: string | Date | undefined): string => {
   if (!timestamp) return '-'
   try {
     const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
     if (isNaN(date.getTime())) return '-'
-    return date.toLocaleString()
+    const diffMs = now.value - date.getTime()
+    const diffS = Math.floor(diffMs / 1000)
+    if (diffS < 10) return 'ahora'
+    if (diffS < 60) return `hace ${diffS}s`
+    const diffMin = Math.floor(diffS / 60)
+    if (diffMin < 60) return `hace ${diffMin} min`
+    const diffH = Math.floor(diffMin / 60)
+    if (diffH < 24) return `hace ${diffH} h`
+    return date.toLocaleDateString('es', { day: 'numeric', month: 'short' }) +
+      ' ' + date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })
   } catch {
     return '-'
   }
 }
+
+// Etiqueta de grupo temporal para separadores de la timeline
+const groupLabel = (timestamp: string | Date | undefined): string => {
+  if (!timestamp) return ''
+  try {
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
+    if (isNaN(date.getTime())) return ''
+    const diffMin = Math.floor((now.value - date.getTime()) / 60000)
+    if (diffMin < 2) return 'Ahora'
+    if (diffMin < 60) return 'Hace unos minutos'
+    const diffH = Math.floor(diffMin / 60)
+    if (diffH < 24) return diffH === 1 ? 'Hace una hora' : `Hace ${diffH} horas`
+    return date.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })
+  } catch {
+    return ''
+  }
+}
+
+// ¿Mostrar separador antes de esta actividad? (cuando cambia el grupo vs la anterior)
+const showSeparator = (index: number): boolean => {
+  if (index === 0) return true
+  const current = filteredActivities.value[index]
+  const prev = filteredActivities.value[index - 1]
+  return groupLabel(current.timestamp) !== groupLabel(prev.timestamp)
+}
+
+// ── Computed ──
+
+// Actividades filtradas por tipo
+const filteredActivities = computed<Activity[]>(() => {
+  if (!activeFilter.value) return activities.value
+  return activities.value.filter(a => a.type === activeFilter.value)
+})
+
+// Métricas para el header compacto
+const activeAgentCount = computed(() =>
+  agents.value.filter(a => a.status === 'active').length
+)
+const runningTaskCount = computed(() =>
+  tasks.value.filter(t => t.status === 'in_progress').length
+)
 
 // Agrupar agentes por zona
 const agentsByZone = computed<ZoneAgents>(() => {
@@ -121,7 +188,8 @@ function getAgentTask(agent: Agent): Task | null {
   ) || null
 }
 
-// Fetch activities
+// ── Data fetching ──
+
 const fetchActivities = async () => {
   try {
     loading.value = true
@@ -136,7 +204,6 @@ const fetchActivities = async () => {
   }
 }
 
-// Fetch agents
 const fetchAgents = async () => {
   try {
     const response = await agentsService.getAll()
@@ -146,10 +213,8 @@ const fetchAgents = async () => {
   }
 }
 
-// Fetch tasks
 const fetchTasks = async () => {
   try {
-    const { tasksService } = await import('@/services/api')
     const response = await tasksService.getAll()
     tasks.value = response.data
   } catch (err) {
@@ -157,14 +222,14 @@ const fetchTasks = async () => {
   }
 }
 
-// Connect to SSE stream
+// ── SSE ──
+
 const connectStream = () => {
   try {
     eventSource.value = activityService.subscribe()
 
     eventSource.value.onopen = () => {
       connected.value = true
-      console.log('SSE connected')
     }
 
     eventSource.value.onmessage = (event) => {
@@ -181,8 +246,7 @@ const connectStream = () => {
       }
     }
 
-    eventSource.value.onerror = (err) => {
-      console.error('SSE error:', err)
+    eventSource.value.onerror = () => {
       connected.value = false
     }
   } catch (err) {
@@ -198,13 +262,13 @@ const disconnectStream = () => {
   }
 }
 
-// Handle agent click
+// ── Interacción ──
+
 const handleAgentClick = (agent: Agent) => {
   selectedAgent.value = agent
   selectedZone.value = null
 }
 
-// Handle zone click
 const handleZoneClick = (zone: any) => {
   selectedZone.value = zone.id
   selectedAgent.value = null
@@ -229,17 +293,20 @@ onMounted(async () => {
   await Promise.all([fetchActivities(), fetchAgents(), fetchTasks()])
   connectStream()
   startPolling()
+  // Refrescar timestamps relativos
+  ticker = window.setInterval(() => { now.value = Date.now() }, 30000)
 })
 
 onUnmounted(() => {
   disconnectStream()
   stopPolling()
+  if (ticker) clearInterval(ticker)
 })
 </script>
 
 <template>
   <div class="activity-view h-screen flex">
-    <!-- Mapa Isométrico -->
+    <!-- Mapa Isométrico — protagonista, pantalla completa -->
     <div class="flex-1 relative">
       <IsometricMap
         :agents="agents"
@@ -248,272 +315,263 @@ onUnmounted(() => {
         @zone-click="handleZoneClick"
       />
 
-      <!-- Header overlay -->
-      <div class="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-gray-900 via-gray-900/95 to-transparent pointer-events-none">
-        <header class="flex justify-between items-center">
-          <div class="pointer-events-auto">
-            <h1 class="text-3xl font-bold text-white">🍷 HQ Bar - Activity Hub</h1>
-            <p class="text-gray-400 mt-1 flex items-center gap-2">
-              Watch your agents work at the bar
-              <span v-if="connected" class="flex items-center gap-1 text-green-400 text-sm">
-                <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                Live
+      <!-- Header compacto translúcido -->
+      <div class="absolute top-0 left-0 right-0 z-10">
+        <div class="mx-4 mt-4 px-4 py-2.5 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-lg flex items-center justify-between gap-4">
+          <div class="flex items-center gap-4 min-w-0">
+            <h1 class="text-lg font-semibold text-white whitespace-nowrap">Actividad HQ</h1>
+
+            <!-- Métricas inline -->
+            <div class="flex items-center gap-2 text-sm">
+              <span
+                class="flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium"
+                :class="connected ? 'bg-green-900/50 text-green-300' : 'bg-gray-800 text-gray-400'"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full"
+                  :class="connected ? 'bg-green-400 animate-pulse' : 'bg-gray-500'"
+                ></span>
+                {{ connected ? 'Live' : 'Offline' }}
               </span>
-              <span v-else class="flex items-center gap-1 text-gray-500 text-sm">
-                <span class="w-2 h-2 bg-gray-500 rounded-full"></span>
-                Offline
+              <span class="px-2.5 py-1 rounded-full bg-purple-900/40 text-purple-300">
+                🤖 {{ activeAgentCount }} activos
               </span>
-            </p>
+              <span class="px-2.5 py-1 rounded-full bg-blue-900/40 text-blue-300 hidden sm:inline-flex">
+                ⚡ {{ runningTaskCount }} en curso
+              </span>
+            </div>
           </div>
 
-          <div class="flex gap-2 pointer-events-auto">
+          <div class="flex gap-2 shrink-0">
             <button
               @click="showActivityLog = !showActivityLog"
-              class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition"
+              class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm rounded-lg transition border border-slate-600/50"
             >
-              {{ showActivityLog ? 'Ocultar' : 'Mostrar' }} Log
+              {{ showActivityLog ? 'Ocultar panel' : 'Ver panel' }}
             </button>
             <button
               v-if="!connected"
               @click="connectStream"
-              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+              class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition"
             >
               Reconectar
             </button>
-          </div>
-        </header>
-
-        <!-- Zone Summary -->
-        <div class="mt-4 flex gap-3">
-          <div class="px-4 py-2 bg-purple-900/40 rounded-lg border border-purple-700/50">
-            <span class="text-purple-400 font-semibold">🎯 Work Control:</span>
-            <span class="text-white ml-2">{{ agentsByZone.workControl.length }} agentes</span>
-          </div>
-          <div class="px-4 py-2 bg-green-900/40 rounded-lg border border-green-700/50">
-            <span class="text-green-400 font-semibold">⚡ Work Area:</span>
-            <span class="text-white ml-2">{{ agentsByZone.workArea.length }} agentes</span>
-          </div>
-          <div class="px-4 py-2 bg-amber-900/40 rounded-lg border border-amber-700/50">
-            <span class="text-amber-400 font-semibold">☕ Lounge:</span>
-            <span class="text-white ml-2">{{ agentsByZone.lounge.length }} agentes</span>
-          </div>
-        </div>
-
-        <!-- Agentes en pantalla rápida -->
-        <div class="mt-3 flex gap-2 flex-wrap">
-          <div
-            v-for="agent in agentsByZone.workControl"
-            :key="'wc-' + agent._id"
-            class="px-3 py-1 bg-purple-900/60 rounded-full text-sm border border-purple-600"
-          >
-            <span class="text-purple-300">{{ agent.name }}</span>
-            <span class="text-purple-400 ml-1">⏳</span>
-          </div>
-          <div
-            v-for="agent in agentsByZone.workArea"
-            :key="'wa-' + agent._id"
-            class="px-3 py-1 bg-green-900/60 rounded-full text-sm border border-green-600"
-          >
-            <span class="text-green-300">{{ agent.name }}</span>
-            <span class="text-green-400 ml-1">⚡</span>
-          </div>
-          <div v-if="agents.length === 0" class="text-gray-500 text-sm">
-            No hay agentes creados aún
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Panel Lateral: Activity Log + Agent Details -->
+    <!-- Panel Lateral: Timeline moderna -->
     <div
       v-if="showActivityLog"
-      class="w-96 bg-gray-800 border-l border-gray-700 flex flex-col"
+      class="w-96 bg-slate-900 border-l border-slate-700/60 flex flex-col"
     >
-      <!-- Agent Details (si seleccionado) -->
-      <div v-if="selectedAgent" class="p-4 border-b border-gray-700 bg-gray-750">
+      <!-- Detalle de agente seleccionado -->
+      <div v-if="selectedAgent" class="m-3 p-4 rounded-xl bg-slate-800/80 border border-slate-700/60">
         <div class="flex justify-between items-start mb-3">
           <div>
-            <h3 class="text-lg font-semibold text-white">{{ selectedAgent.name }}</h3>
-            <p class="text-gray-400 text-sm">{{ selectedAgent.role || 'Sin rol' }}</p>
+            <h3 class="text-base font-semibold text-white">{{ selectedAgent.name }}</h3>
+            <p class="text-slate-400 text-xs">{{ selectedAgent.role || 'Sin rol' }}</p>
           </div>
           <button
             @click="selectedAgent = null"
-            class="text-gray-400 hover:text-white"
+            class="text-slate-500 hover:text-white text-sm"
           >
             ✕
           </button>
         </div>
 
-        <!-- Estado y ubicación -->
-        <div class="space-y-2 text-sm">
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Ubicación:</span>
-            <span
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="p-2 rounded-lg bg-slate-900/70">
+            <p class="text-slate-500">Ubicación</p>
+            <p
+              class="font-medium mt-0.5"
               :class="{
                 'text-purple-400': getAgentZone(selectedAgent) === 'work-control',
                 'text-green-400': getAgentZone(selectedAgent) === 'work-area',
                 'text-amber-400': getAgentZone(selectedAgent) === 'lounge'
               }"
             >
-              {{
-                getAgentZone(selectedAgent) === 'work-control' ? '🎯 Work Control' :
-                getAgentZone(selectedAgent) === 'work-area' ? '⚡ Work Area' :
-                '☕ Lounge'
-              }}
-            </span>
+              {{ getAgentZone(selectedAgent) === 'work-control' ? '🎯 Control' :
+                 getAgentZone(selectedAgent) === 'work-area' ? '⚡ Trabajando' : '☕ Lounge' }}
+            </p>
           </div>
-
-          <div class="flex justify-between items-center">
-            <span class="text-gray-400">Estado:</span>
-            <span
-              :class="{
-                'text-green-400': selectedAgent.status === 'active',
-                'text-gray-400': selectedAgent.status === 'inactive' || selectedAgent.status === 'offline',
-                'text-red-400': selectedAgent.status === 'error' || selectedAgent.status === 'failed'
-              }"
+          <div class="p-2 rounded-lg bg-slate-900/70">
+            <p class="text-slate-500">Estado</p>
+            <p class="font-medium mt-0.5 flex items-center gap-1.5"
+               :class="{
+                 'text-green-400': selectedAgent.status === 'active',
+                 'text-slate-400': selectedAgent.status === 'inactive' || selectedAgent.status === 'offline',
+                 'text-red-400': selectedAgent.status === 'error' || selectedAgent.status === 'failed'
+               }"
             >
+              <span class="w-1.5 h-1.5 rounded-full bg-current inline-block"></span>
               {{ selectedAgent.status }}
-            </span>
-          </div>
-
-          <div class="flex justify-between">
-            <span class="text-gray-400">Container:</span>
-            <span class="text-white font-mono text-xs truncate max-w-[150px]">
-              {{ selectedAgent.containerId || 'N/A' }}
-            </span>
-          </div>
-
-          <!-- Tarea actual -->
-          <div v-if="getAgentTask(selectedAgent)" class="mt-3 p-2 bg-gray-900 rounded border border-gray-700">
-            <p class="text-gray-400 text-xs mb-1">Tarea actual:</p>
-            <p class="text-white text-sm font-medium">{{ getAgentTask(selectedAgent)?.title }}</p>
-            <div class="flex items-center gap-2 mt-1">
-              <span
-                :class="{
-                  'text-yellow-400': getAgentTask(selectedAgent)?.status === 'pending',
-                  'text-green-400': getAgentTask(selectedAgent)?.status === 'in_progress',
-                  'text-gray-400': getAgentTask(selectedAgent)?.status === 'completed'
-                }"
-                class="text-xs"
-              >
-                {{ getAgentTask(selectedAgent)?.status }}
-              </span>
-              <span v-if="getAgentTask(selectedAgent)?.type" class="text-xs text-gray-500">
-                {{ getAgentTask(selectedAgent)?.type }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Sin tarea -->
-          <div v-else class="mt-3 p-2 bg-gray-900/50 rounded border border-dashed border-gray-700">
-            <p class="text-gray-500 text-sm text-center">
-              {{ getAgentZone(selectedAgent) === 'lounge' ? '☺ Esperando asignación de tarea' : '⏳ Tarea asignada, pendiente de inicio' }}
             </p>
           </div>
         </div>
+
+        <div v-if="getAgentTask(selectedAgent)" class="mt-3 p-2.5 rounded-lg bg-slate-900/70 border border-slate-700/40">
+          <p class="text-slate-500 text-xs mb-1">Tarea actual</p>
+          <p class="text-white text-sm font-medium leading-snug">{{ getAgentTask(selectedAgent)?.title }}</p>
+          <div class="flex items-center gap-2 mt-1.5">
+            <span class="text-xs px-2 py-0.5 rounded-full"
+              :class="{
+                'bg-yellow-900/50 text-yellow-300': getAgentTask(selectedAgent)?.status === 'pending',
+                'bg-green-900/50 text-green-300': getAgentTask(selectedAgent)?.status === 'in_progress'
+              }"
+            >
+              {{ getAgentTask(selectedAgent)?.status }}
+            </span>
+            <span v-if="getAgentTask(selectedAgent)?.type" class="text-xs text-slate-500 font-mono">
+              {{ getAgentTask(selectedAgent)?.type }}
+            </span>
+          </div>
+        </div>
+        <div v-else class="mt-3 p-2.5 rounded-lg border border-dashed border-slate-700/60 text-center">
+          <p class="text-slate-500 text-xs">
+            {{ getAgentZone(selectedAgent) === 'lounge' ? '☕ Esperando asignación' : '⏳ Pendiente de inicio' }}
+          </p>
+        </div>
       </div>
 
-      <!-- Zone Details (si zona seleccionada) -->
-      <div v-else-if="selectedZone" class="p-4 border-b border-gray-700 bg-gray-750">
-        <div class="flex justify-between items-start mb-3">
-          <h3 class="text-lg font-semibold text-white">
-            {{
-              selectedZone === 'work-control' ? '🎯 Work Control' :
-              selectedZone === 'work-area' ? '⚡ Work Area' :
-              '☕ Lounge'
-            }}
+      <!-- Detalle de zona seleccionada -->
+      <div v-else-if="selectedZone" class="m-3 p-4 rounded-xl bg-slate-800/80 border border-slate-700/60">
+        <div class="flex justify-between items-start mb-2">
+          <h3 class="text-base font-semibold text-white">
+            {{ selectedZone === 'work-control' ? '🎯 Control' :
+               selectedZone === 'work-area' ? '⚡ Área de trabajo' : '☕ Lounge' }}
           </h3>
-          <button
-            @click="selectedZone = null"
-            class="text-gray-400 hover:text-white"
-          >
-            ✕
-          </button>
+          <button @click="selectedZone = null" class="text-slate-500 hover:text-white text-sm">✕</button>
         </div>
-
-        <p class="text-gray-400 text-sm mb-3">
-          {{
-            selectedZone === 'work-control' ? 'Agentes con tareas asignadas esperando inicio' :
-            selectedZone === 'work-area' ? 'Agentes ejecutando tareas' :
-            'Agentes disponibles sin tareas asignadas'
-          }}
+        <p class="text-slate-400 text-xs mb-3">
+          {{ selectedZone === 'work-control' ? 'Agentes con tareas asignadas esperando inicio' :
+             selectedZone === 'work-area' ? 'Agentes ejecutando tareas' :
+             'Agentes disponibles sin tareas asignadas' }}
         </p>
-
-        <div class="space-y-2">
-          <div
+        <div class="space-y-1.5">
+          <button
             v-for="agent in (selectedZone === 'work-control' ? agentsByZone.workControl :
                              selectedZone === 'work-area' ? agentsByZone.workArea :
                              agentsByZone.lounge)"
             :key="agent._id"
-            class="p-2 bg-gray-900 rounded border border-gray-700 cursor-pointer hover:border-gray-600"
+            class="w-full p-2 rounded-lg bg-slate-900/70 border border-slate-700/40 text-left hover:border-slate-500 transition"
             @click="selectedAgent = agent; selectedZone = null"
           >
             <div class="flex justify-between items-center">
               <span class="text-white text-sm">{{ agent.name }}</span>
-              <span class="text-xs text-gray-500">{{ agent.role || 'Agent' }}</span>
+              <span class="text-xs text-slate-500">{{ agent.role || 'Agent' }}</span>
             </div>
-            <div v-if="getAgentTask(agent)" class="mt-1 text-xs text-gray-400 truncate">
-              {{ getAgentTask(agent)?.title }}
-            </div>
-          </div>
-          <div v-if="(
-            selectedZone === 'work-control' && agentsByZone.workControl.length === 0
-          ) || (
-            selectedZone === 'work-area' && agentsByZone.workArea.length === 0
-          ) || (
-            selectedZone === 'lounge' && agentsByZone.lounge.length === 0
-          )" class="text-gray-500 text-sm text-center py-2">
+          </button>
+          <p
+            v-if="(selectedZone === 'work-control' && agentsByZone.workControl.length === 0) ||
+                  (selectedZone === 'work-area' && agentsByZone.workArea.length === 0) ||
+                  (selectedZone === 'lounge' && agentsByZone.lounge.length === 0)"
+            class="text-slate-500 text-xs text-center py-2"
+          >
             No hay agentes en esta zona
-          </div>
+          </p>
         </div>
       </div>
 
-      <!-- Activity Feed -->
-      <div class="flex-1 overflow-y-auto">
-        <div class="p-4 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
-          <h2 class="text-lg font-semibold text-white">Activity Feed</h2>
+      <!-- Header del feed con filtros -->
+      <div class="px-3 pt-3 pb-2 border-b border-slate-700/60">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wide">
+            Actividad
+          </h2>
+          <span class="text-xs text-slate-500">{{ filteredActivities.length }} eventos</span>
         </div>
+        <div class="flex gap-1 flex-wrap">
+          <button
+            v-for="opt in filterOptions"
+            :key="opt.id"
+            @click="activeFilter = opt.id"
+            class="px-2.5 py-1 rounded-full text-xs font-medium transition border"
+            :class="activeFilter === opt.id
+              ? 'bg-slate-700 text-white border-slate-500'
+              : 'bg-slate-900/60 text-slate-400 border-slate-700/50 hover:text-slate-200'"
+          >
+            {{ opt.icon }} {{ opt.label }}
+          </button>
+        </div>
+      </div>
 
-        <div v-if="error" class="p-4 bg-red-900/30 border-b border-red-800">
+      <!-- Feed: timeline agrupada -->
+      <div class="flex-1 overflow-y-auto">
+        <div v-if="error" class="m-3 p-3 rounded-lg bg-red-900/30 border border-red-800/60">
           <p class="text-red-400 text-sm">{{ error }}</p>
         </div>
 
-        <div v-if="loading" class="p-8 text-center">
-          <p class="text-gray-400">Cargando...</p>
+        <div v-if="loading" class="py-12 text-center">
+          <div class="inline-block w-6 h-6 border-2 border-slate-600 border-t-blue-400 rounded-full animate-spin"></div>
+          <p class="text-slate-500 text-sm mt-2">Cargando actividad…</p>
         </div>
 
-        <div v-else class="p-4 space-y-3">
-          <div v-if="activities.length === 0" class="text-center py-8">
-            <p class="text-gray-500 text-sm">No hay actividad reciente</p>
-          </div>
+        <div v-else-if="filteredActivities.length === 0" class="py-12 px-6 text-center">
+          <span class="text-4xl">📡</span>
+          <p class="text-slate-400 text-sm mt-3">
+            {{ activeFilter ? 'Sin eventos de este tipo' : 'Sin actividad aún' }}
+          </p>
+          <p class="text-slate-600 text-xs mt-1">
+            Lanzá una misión para ver al equipo en acción
+          </p>
+        </div>
 
-          <div
-            v-for="activity in activities"
-            :key="activity._id"
-            class="bg-gray-900 rounded-lg p-3 border border-gray-700"
-          >
-            <div class="flex gap-3">
-              <div class="flex-shrink-0">
-                <div :class="['w-8 h-8 rounded-full flex items-center justify-center text-sm border', typeColors[activity.type]]">
-                  {{ typeIcons[activity.type] }}
-                </div>
-              </div>
+        <TransitionGroup
+          v-else
+          name="feed"
+          tag="div"
+          class="px-3 py-3 space-y-1"
+        >
+          <template v-for="(activity, index) in filteredActivities" :key="activity._id">
+            <!-- Separador de grupo temporal -->
+            <div v-if="showSeparator(index)" class="flex items-center gap-2 pt-3 pb-1 first:pt-0">
+              <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                {{ groupLabel(activity.timestamp) }}
+              </span>
+              <span class="flex-1 h-px bg-slate-700/50"></span>
+            </div>
+
+            <!-- Card de evento -->
+            <div
+              class="group flex gap-2.5 py-2 pl-3 pr-2 rounded-r-lg border-l-2 bg-slate-800/40 hover:bg-slate-800/80 transition-colors"
+              :class="typeBars[activity.type]"
+            >
+              <div class="flex-shrink-0 pt-0.5 text-sm">{{ typeIcons[activity.type] }}</div>
               <div class="flex-1 min-w-0">
-                <p class="text-white text-sm break-words">{{ activity.message }}</p>
-                <p class="text-gray-500 text-xs mt-1">
-                  {{ formatTimestamp(activity.timestamp) }}
+                <p class="text-slate-200 text-[13px] leading-snug break-words">
+                  {{ activity.message }}
+                </p>
+                <p class="text-slate-500 text-[11px] mt-0.5">
+                  {{ timeAgo(activity.timestamp) }}
                 </p>
               </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </TransitionGroup>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.bg-gray-750 {
-  background-color: #2d3748;
+/* Animación de entrada de eventos nuevos (SSE) */
+.feed-enter-active {
+  transition: all 0.35s ease-out;
+}
+.feed-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+.feed-leave-active {
+  transition: all 0.2s ease-in;
+}
+.feed-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.feed-move {
+  transition: transform 0.3s ease;
 }
 </style>

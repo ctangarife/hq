@@ -150,7 +150,13 @@ class TaskDispatcherService {
       prompt += `\n\`\`\`\n\n`
     }
 
-    prompt += `Ejecuta esta tarea y reporta el resultado en español.`
+    prompt += `## Instrucciones de entrega (CRÍTICAS)
+- Entrega ÚNICAMENTE el contenido final solicitado en tu respuesta.
+- NO incluyas planes de ejecución, análisis previos, listas de tareas, TODOs ni explicaciones de tu proceso.
+- NO delegues la tarea a otro agente: ejecútala tú directamente.
+- NO repitas el enunciado; el entregable empieza de una.
+
+Ejecuta esta tarea y reporta SOLO el resultado final en español.`
 
     return prompt
   }

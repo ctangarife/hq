@@ -212,14 +212,20 @@ export class DockerService {
     })
 
     try {
+      // Attach del stdin ANTES de start. El ENTRYPOINT (goose run -i -) lee
+      // stdin inmediatamente al arrancar; si el attach conecta después, el
+      // prompt se pierde y Goose responde al vacío (bug descubierto en la
+      // prueba Pentia: efímeros en bucle de saludos). Con el stream ya
+      // conectado antes de start, la race desaparece.
+      const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true })
+
       await container.start()
 
-      // 4. Pasar el prompt por stdin ( Goose lee con -i - )
-      const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true })
+      // Pasar el prompt por stdin (Goose lee con -i -)
       stream.write(prompt)
       stream.end()
 
-      // 5. Capturar stdout
+      // Capturar stdout
       const output = await this.captureContainerOutput(container, options.timeoutMs ?? 300000)
       console.log(`[ephemeral] task completed (${output.length} chars output)`)
       return output.trim()
