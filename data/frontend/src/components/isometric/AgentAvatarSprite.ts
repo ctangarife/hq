@@ -99,6 +99,7 @@ export async function getAvatarTexture(role: string, agentName: string): Promise
 export class AgentAvatarSprite extends Container {
   private shadow: Graphics
   private ring: Graphics
+  private spotlight: Graphics
   private avatar: Sprite | null = null
   private avatarPlaceholder: Graphics
   private emojiText: Text
@@ -109,6 +110,10 @@ export class AgentAvatarSprite extends Container {
   private _role: string = ''
 
   private animTime: number = 0
+
+  // Hover: spotlight + escala con easing hacia target
+  private hoverAmount: number = 0
+  private hoverTarget: number = 0
 
   // Sistema de movimiento (igual que RobotSprite)
   private isMoving: boolean = false
@@ -132,6 +137,7 @@ export class AgentAvatarSprite extends Container {
 
     this.shadow = new Graphics()
     this.ring = new Graphics()
+    this.spotlight = new Graphics()
     this.avatarPlaceholder = new Graphics()
     this.emojiText = new Text({
       text: '',
@@ -151,6 +157,13 @@ export class AgentAvatarSprite extends Container {
     this.buildRing()
     this.buildPlaceholder()
 
+    // Spotlight de hover: luz cálida amplia bajo el avatar (alpha animada)
+    this.spotlight.beginPath()
+    this.spotlight.ellipse(0, 0, 42, 20)
+    this.spotlight.fill({ color: 0xFFD98E, alpha: 0.22 })
+    this.spotlight.alpha = 0
+
+    this.addChild(this.spotlight)
     this.addChild(this.shadow)
     this.addChild(this.ring)
     this.addChild(this.avatarPlaceholder)
@@ -160,6 +173,10 @@ export class AgentAvatarSprite extends Container {
     // Nombre centrado bajo el anillo
     this.nameText.anchor.set(0.5)
     this.nameText.y = 18
+
+    // Hover: spotlight + escala sutil (feedback inmediato)
+    this.on('pointerover', () => { this.hoverTarget = 1 })
+    this.on('pointerout', () => { this.hoverTarget = 0 })
 
     // Cargar el avatar DiceBear asíncronamente (el placeholder se ve mientras)
     this.loadAvatar()
@@ -279,6 +296,14 @@ export class AgentAvatarSprite extends Container {
 
   private animate(ticker: Ticker): void {
     this.animTime = ticker.lastTime / 1000
+
+    // Easing del hover: spotlight fade + escala sutil hacia 1.07
+    const dt = Math.min(ticker.deltaMS / 1000, 0.05)
+    this.hoverAmount += (this.hoverTarget - this.hoverAmount) * Math.min(dt * 10, 1)
+    this.spotlight.alpha = this.hoverAmount
+    const hoverScale = 1 + this.hoverAmount * 0.07
+    this.scale.set(hoverScale)
+    this.nameText.style.fill = this.hoverAmount > 0.5 ? 0xFFFFFF : 0xE2E8F0
 
     if (this.isMoving) {
       this.updateMovement()

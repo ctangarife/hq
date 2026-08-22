@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Application, Container, Graphics, Text, FillGradient } from 'pixi.js'
+import { Application, Container, Graphics, Text, FillGradient, Ticker } from 'pixi.js'
 import { AgentAvatarSprite } from './AgentAvatarSprite'
 import { FurnitureDrawer } from './FurnitureDrawer'
 
@@ -38,6 +38,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   agentClick: [agent: Agent]
   zoneClick: [zone: Zone]
+  zoneHover: [payload: { zoneId: string; name: string; screenX: number; screenY: number }]
+  zoneLeave: []
 }>()
 
 const canvasContainer = ref<HTMLDivElement>()
@@ -47,7 +49,8 @@ let floorContainer: Container | null = null
 let furnitureContainer: Container | null = null
 const robotSprites = new Map<string, AgentAvatarSprite>()
 
-// Zonas del mapa HQ - actualizadas para los tres estados de trabajo
+// Zonas del mapa HQ - colores armonizados con la paleta del bar nocturno
+// (ciruela/esmeralda/latón — matchean los anillos de estado y la decoración)
 const zones: Zone[] = [
   {
     id: 'work-control',
@@ -56,7 +59,7 @@ const zones: Zone[] = [
     y: -100,
     width: 220,
     height: 100,
-    color: 0x7C3AED  // Purple - agents waiting for task
+    color: 0xB98AC4  // Ciruela — agentes esperando iniciar tarea
   },
   {
     id: 'work-area',
@@ -65,7 +68,7 @@ const zones: Zone[] = [
     y: 50,
     width: 180,
     height: 100,
-    color: 0x059669  // Green - agents working
+    color: 0x2ECC8F  // Esmeralda — agentes ejecutando (matchea anillo working)
   },
   {
     id: 'lounge',
@@ -74,7 +77,7 @@ const zones: Zone[] = [
     y: 50,
     width: 160,
     height: 100,
-    color: 0xB45309  // Orange/Amber - idle agents
+    color: 0xD9A441  // Latón — coherente con la decoración dorada del lounge
   }
 ]
 
@@ -131,8 +134,41 @@ async function initPixi() {
   mapContainer.scale.set(0.8)
 }
 
-function drawZones() {
+/**
+ * Ripple expansivo desde un punto (feedback de click en zona).
+ * Círculo isométrico que crece y se desvanece, auto-destruyéndose.
+ */
+function spawnRipple(x: number, y: number, color: number) {
   if (!mapContainer) return
+  const ripple = new Graphics()
+  ripple.x = x
+  ripple.y = y
+  mapContainer.addChild(ripple)
+
+  const start = performance.now()
+  const duration = 550
+
+  const tick = () => {
+    const t = Math.min((performance.now() - start) / duration, 1)
+    const eased = 1 - Math.pow(1 - t, 2)
+    const radius = 8 + eased * 46
+    const alpha = (1 - t) * 0.55
+
+    ripple.clear()
+    ripple.beginPath()
+    ripple.ellipse(0, 0, radius, radius * 0.45)
+    ripple.stroke({ width: 2, color, alpha })
+
+    if (t >= 1) {
+      Ticker.shared.remove(tick)
+      ripple.destroy()
+    }
+  }
+
+  Ticker.shared.add(tick)
+}
+
+function drawZones() {  if (!mapContainer) return
 
   zones.forEach(zone => {
     const g = new Graphics()
@@ -143,76 +179,144 @@ function drawZones() {
     const hw = zone.width / 2
     const hh = zone.height / 2
 
-    // Fondo con gradiente de alpha
+    // Halo exterior muy tenue (profundidad sin gritar)
+    g.beginPath()
+    g.moveTo(0, -hh - 6)
+    g.lineTo(hw + 10, 0)
+    g.lineTo(0, hh + 6)
+    g.lineTo(-hw - 10, 0)
+    g.closePath()
+    g.fill({ color: zone.color, alpha: 0.04 })
+
+    // Relleno principal — sutil, deja ver el parquet
     g.beginPath()
     g.moveTo(0, -hh)
     g.lineTo(hw, 0)
     g.lineTo(0, hh)
     g.lineTo(-hw, 0)
     g.closePath()
-    g.fill({ color: zone.color, alpha: 0.25 })
+    g.fill({ color: zone.color, alpha: 0.08 })
 
-    // Borde
+    // Núcleo interior apenas más presente (luz cenital)
+    g.beginPath()
+    g.moveTo(0, -hh + 10)
+    g.lineTo(hw - 16, 0)
+    g.lineTo(0, hh - 10)
+    g.lineTo(-hw + 16, 0)
+    g.closePath()
+    g.fill({ color: zone.color, alpha: 0.05 })
+
+    // Borde fino discreto + trazo punteado interior
     g.beginPath()
     g.moveTo(0, -hh)
     g.lineTo(hw, 0)
     g.lineTo(0, hh)
     g.lineTo(-hw, 0)
     g.closePath()
-    g.stroke({ width: 2, color: zone.color, alpha: 0.9 })
+    g.stroke({ width: 1, color: zone.color, alpha: 0.35 })
 
-    // Grosor 3D
-    const thickness = 10
+    // Bisel 3D muy sutil (antes era un bloque de color fuerte)
     g.beginPath()
     g.moveTo(-hw, 0)
-    g.lineTo(-hw, thickness)
-    g.lineTo(0, hh + thickness)
+    g.lineTo(-hw, 4)
+    g.lineTo(0, hh + 4)
     g.lineTo(0, hh)
     g.closePath()
-    g.fill({ color: zone.color, alpha: 0.6 })
+    g.fill({ color: zone.color, alpha: 0.12 })
 
-    // Grosor lateral derecho
-    g.beginPath()
-    g.moveTo(0, hh)
-    g.lineTo(0, hh + thickness)
-    g.lineTo(hw, thickness)
-    g.lineTo(hw, 0)
-    g.closePath()
-    g.fill({ color: zone.color, alpha: 0.4 })
+    // Overlay de hover: se ilumina la zona (fade in/out via alpha del overlay)
+    const hoverOverlay = new Graphics()
+    hoverOverlay.beginPath()
+    hoverOverlay.moveTo(0, -hh)
+    hoverOverlay.lineTo(hw, 0)
+    hoverOverlay.lineTo(0, hh)
+    hoverOverlay.lineTo(-hw, 0)
+    hoverOverlay.closePath()
+    hoverOverlay.fill({ color: zone.color, alpha: 0.14 })
+    hoverOverlay.alpha = 0
+    g.addChild(hoverOverlay)
 
-    // Etiqueta con emoji
+    // Etiqueta como chip elegante: pill oscuro translúcido + punto de color
     const label = new Text({
       text: zone.name,
       style: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        fill: 0xFFFFFF,
-        align: 'center'
+        fontSize: 11,
+        fontWeight: '600',
+        letterSpacing: 1,
+        fill: 0xE2E8F0,
+        align: 'center',
       }
     })
-    label.x = -label.width / 2
-    label.y = -hh - 25
-    g.addChild(label)
 
-    // Contador de agentes en esta zona
+    const chipPadX = 10
+    const chipW = label.width + chipPadX * 2 + 8 // +8 por el punto de color
+    const chipH = 18
+    const chip = new Graphics()
+    chip.beginPath()
+    chip.roundRect(-chipW / 2, -hh - 30, chipW, chipH, 9)
+    chip.fill({ color: 0x0F1424, alpha: 0.72 })
+    chip.beginPath()
+    chip.roundRect(-chipW / 2, -hh - 30, chipW, chipH, 9)
+    chip.stroke({ width: 1, color: zone.color, alpha: 0.45 })
+    // Punto de color de la zona
+    chip.beginPath()
+    chip.circle(-chipW / 2 + chipPadX, -hh - 30 + chipH / 2, 2.5)
+    chip.fill({ color: zone.color, alpha: 1 })
+    chip.addChild(label)
+    label.x = -chipW / 2 + chipPadX + 8
+    label.y = -hh - 30 + chipH / 2 - label.height / 2
+    g.addChild(chip)
+
+    // Contador de agentes (discreto, dentro de la zona)
     const agentCount = getAgentsInZone(zone.id).length
     if (agentCount > 0) {
       const countLabel = new Text({
-        text: `${agentCount} agent${agentCount > 1 ? 's' : ''}`,
+        text: `${agentCount}`,
         style: {
-          fontSize: 12,
-          fill: 0xCCCCCC,
-          align: 'center'
+          fontSize: 13,
+          fontWeight: '700',
+          fill: zone.color,
+          align: 'center',
         }
       })
       countLabel.x = -countLabel.width / 2
-      countLabel.y = 15
+      countLabel.y = 10
       g.addChild(countLabel)
     }
 
-    // Click
+    // Interacción: hover ilumina + tooltip, click emite + ripple
     g.eventMode = 'static'
-    g.on('pointerdown', () => emit('zoneClick', zone))
+    g.on('pointerover', (e: any) => {
+      hoverOverlay.alpha = 1
+      const p = e.global
+      emit('zoneHover', {
+        zoneId: zone.id,
+        name: zone.name,
+        screenX: p.x,
+        screenY: p.y,
+      })
+    })
+    g.on('pointerout', () => {
+      hoverOverlay.alpha = 0
+      emit('zoneLeave')
+    })
+    g.on('pointermove', (e: any) => {
+      const p = e.global
+      emit('zoneHover', {
+        zoneId: zone.id,
+        name: zone.name,
+        screenX: p.x,
+        screenY: p.y,
+      })
+    })
+    g.on('pointerdown', (e: any) => {
+      // Ripple expansivo desde el punto de click
+      if (mapContainer && app) {
+        const local = mapContainer.toLocal(e.global)
+        spawnRipple(local.x, local.y, zone.color)
+      }
+      emit('zoneClick', zone)
+    })
 
     if (mapContainer) {
       mapContainer.addChild(g)

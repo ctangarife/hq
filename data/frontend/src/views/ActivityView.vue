@@ -46,6 +46,9 @@ const selectedAgent = ref<Agent | null>(null)
 const selectedZone = ref<string | null>(null)
 const showActivityLog = ref(true)
 
+// Tooltip de zona (hover en el mapa): posición en pantalla + resumen
+const zoneTooltip = ref<{ name: string; zoneId: string; x: number; y: number } | null>(null)
+
 // Filtro activo del feed ('' = todos)
 const activeFilter = ref('')
 
@@ -274,6 +277,23 @@ const handleZoneClick = (zone: any) => {
   selectedAgent.value = null
 }
 
+const handleZoneHover = (payload: { zoneId: string; name: string; screenX: number; screenY: number }) => {
+  zoneTooltip.value = { zoneId: payload.zoneId, name: payload.name, x: payload.screenX, y: payload.screenY }
+}
+
+const handleZoneLeave = () => {
+  zoneTooltip.value = null
+}
+
+// Agentes para el tooltip (según la zona hovered)
+const tooltipAgents = computed<Agent[]>(() => {
+  if (!zoneTooltip.value) return []
+  const zoneId = zoneTooltip.value.zoneId
+  if (zoneId === 'work-control') return agentsByZone.value.workControl
+  if (zoneId === 'work-area') return agentsByZone.value.workArea
+  return agentsByZone.value.lounge
+})
+
 // Poll agents status
 let pollInterval: number | null = null
 const startPolling = () => {
@@ -313,7 +333,26 @@ onUnmounted(() => {
         :tasks="tasks"
         @agent-click="handleAgentClick"
         @zone-click="handleZoneClick"
+        @zone-hover="handleZoneHover"
+        @zone-leave="handleZoneLeave"
       />
+
+      <!-- Tooltip flotante de zona (hover) -->
+      <div
+        v-if="zoneTooltip"
+        class="absolute z-20 pointer-events-none bg-slate-950/90 backdrop-blur border border-slate-700/70 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[180px] max-w-[260px]"
+        :style="{ left: (zoneTooltip.x + 14) + 'px', top: (zoneTooltip.y + 14) + 'px' }"
+      >
+        <p class="text-xs font-semibold text-slate-200 tracking-wide">{{ zoneTooltip.name }}</p>
+        <p class="text-[10px] text-slate-500 mt-0.5">{{ tooltipAgents.length }} agente{{ tooltipAgents.length === 1 ? '' : 's' }}</p>
+        <div v-if="tooltipAgents.length > 0" class="mt-1.5 space-y-1">
+          <div v-for="a in tooltipAgents.slice(0, 4)" :key="a._id" class="text-[11px] leading-tight">
+            <span class="text-slate-300">{{ a.name }}</span>
+            <span v-if="getAgentTask(a)" class="text-slate-500"> — {{ getAgentTask(a)!.title.slice(0, 28) }}…</span>
+          </div>
+          <p v-if="tooltipAgents.length > 4" class="text-[10px] text-slate-600">+{{ tooltipAgents.length - 4 }} más</p>
+        </div>
+      </div>
 
       <!-- Header compacto translúcido -->
       <div class="absolute top-0 left-0 right-0 z-10">
