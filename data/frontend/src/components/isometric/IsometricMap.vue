@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { Application, Container, Graphics, Text, FillGradient, Ticker } from 'pixi.js'
+import { Application, Container, Graphics, Text, FillGradient, Ticker, Polygon } from 'pixi.js'
 import { AgentAvatarSprite } from './AgentAvatarSprite'
 import { FurnitureDrawer } from './FurnitureDrawer'
 
@@ -49,38 +49,18 @@ let floorContainer: Container | null = null
 let furnitureContainer: Container | null = null
 const robotSprites = new Map<string, AgentAvatarSprite>()
 
-// Vida ambiental: overlays de zona (respiración), hover actual y scheduler zZz
+// Vida ambiental: overlays de zona (hover), scheduler zZz
 const zoneOverlays = new Map<string, Graphics>()
 let hoveredZoneId: string | null = null
-let breatheTime = 0
 let zzzTimer = 0
 
 /**
- * Tick ambiental (uno solo para todo el mapa):
- * - Zonas activas respiran (pulso alpha 3s SOLO con agentes; quieta si vacía
- *   — abundancia honesta estilo Animal Crossing)
- * - Scheduler zZz: un agente idle del lounge emite "zZz" cada ~8s
+ * Tick ambiental (uno solo para todo el mapa): scheduler zZz.
+ * La respiración del suelo se eliminó — era redundante con los anillos
+ * pulsantes de los avatares working (la actividad la comunica el agente,
+ * no el piso) y añadía invasividad visual.
  */
 function ambientTick(ticker: Ticker) {
-  breatheTime = ticker.lastTime / 1000
-
-  for (const [zoneId, overlay] of zoneOverlays) {
-    // Solo las zonas de trabajo respiran (lounge = descanso, quieta)
-    if (zoneId !== 'work-area' && zoneId !== 'work-control') continue
-    if (hoveredZoneId === zoneId) {
-      overlay.alpha = 1
-      continue
-    }
-    const hasAgents = getAgentsInZone(zoneId).length > 0
-    if (hasAgents) {
-      // Ciclo respiración: 3s, rango sutil 0.10–0.80 del overlay (fill 0.14)
-      overlay.alpha = 0.45 + Math.sin(breatheTime * ((Math.PI * 2) / 3)) * 0.35
-    } else {
-      overlay.alpha = 0
-    }
-  }
-
-  // zZz scheduler
   zzzTimer += ticker.deltaMS
   if (zzzTimer >= 8000) {
     zzzTimer = 0
@@ -297,50 +277,18 @@ function drawZones() {  if (!mapContainer) return
     const hw = zone.width / 2
     const hh = zone.height / 2
 
-    // Halo exterior muy tenue (profundidad sin gritar)
-    g.beginPath()
-    g.moveTo(0, -hh - 6)
-    g.lineTo(hw + 10, 0)
-    g.lineTo(0, hh + 6)
-    g.lineTo(-hw - 10, 0)
-    g.closePath()
-    g.fill({ color: zone.color, alpha: 0.04 })
-
-    // Relleno principal — sutil, deja ver el parquet
-    g.beginPath()
-    g.moveTo(0, -hh)
-    g.lineTo(hw, 0)
-    g.lineTo(0, hh)
-    g.lineTo(-hw, 0)
-    g.closePath()
-    g.fill({ color: zone.color, alpha: 0.08 })
-
-    // Núcleo interior apenas más presente (luz cenital)
-    g.beginPath()
-    g.moveTo(0, -hh + 10)
-    g.lineTo(hw - 16, 0)
-    g.lineTo(0, hh - 10)
-    g.lineTo(-hw + 16, 0)
-    g.closePath()
-    g.fill({ color: zone.color, alpha: 0.05 })
-
-    // Borde fino discreto + trazo punteado interior
-    g.beginPath()
-    g.moveTo(0, -hh)
-    g.lineTo(hw, 0)
-    g.lineTo(0, hh)
-    g.lineTo(-hw, 0)
-    g.closePath()
-    g.stroke({ width: 1, color: zone.color, alpha: 0.35 })
-
-    // Bisel 3D muy sutil (antes era un bloque de color fuerte)
-    g.beginPath()
-    g.moveTo(-hw, 0)
-    g.lineTo(-hw, 4)
-    g.lineTo(0, hh + 4)
-    g.lineTo(0, hh)
-    g.closePath()
-    g.fill({ color: zone.color, alpha: 0.12 })
+    // Zonas INVISIBLES por defecto: el suelo es 100% parquet y las zonas las
+    // define el mobiliario (sofás=lounge, escritorio=trabajo) — como los
+    // espacios reales. El rombo coloreado solo existe como hitArea para
+    // hover/click; su identidad visible es el chip flotante y el overlay
+    // que emerge al pasar el mouse. (Feedback: los recuadros pintados
+    // resultaban invasivos por más sutiles que se hicieran.)
+    g.hitArea = new Polygon([
+      0, -hh,
+      hw, 0,
+      0, hh,
+      -hw, 0,
+    ])
 
     // Overlay de hover: se ilumina la zona (fade in/out via alpha del overlay)
     const hoverOverlay = new Graphics()
@@ -350,7 +298,14 @@ function drawZones() {  if (!mapContainer) return
     hoverOverlay.lineTo(0, hh)
     hoverOverlay.lineTo(-hw, 0)
     hoverOverlay.closePath()
-    hoverOverlay.fill({ color: zone.color, alpha: 0.14 })
+    hoverOverlay.fill({ color: zone.color, alpha: 0.12 })
+    hoverOverlay.beginPath()
+    hoverOverlay.moveTo(0, -hh)
+    hoverOverlay.lineTo(hw, 0)
+    hoverOverlay.lineTo(0, hh)
+    hoverOverlay.lineTo(-hw, 0)
+    hoverOverlay.closePath()
+    hoverOverlay.stroke({ width: 1, color: zone.color, alpha: 0.4 })
     hoverOverlay.alpha = 0
     g.addChild(hoverOverlay)
     zoneOverlays.set(zone.id, hoverOverlay)
