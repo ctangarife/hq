@@ -298,7 +298,13 @@ export class DockerService {
    *        L L     goose is ready
    */
   private cleanGooseOutput(raw: string): string {
-    const lines = raw.split('\n')
+    // Sanitizar códigos ANSI/escape de progreso de Goose (%% tokens, colores)
+    // que llegan fragmentados por el stream y ensucian cada línea.
+    const ansiClean = raw
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+
+    const lines = ansiClean.split('\n')
 
     // Banner de Goose (en cualquier posición — puede haber líneas vacías antes)
     const bannerPatterns = [

@@ -483,7 +483,20 @@ export async function checkMissionCompletion(missionId: string): Promise<boolean
 
   const tasks = await Task.find({ missionId })
 
-  // Check if all tasks are completed or failed
+  // Guard anti-race: al completarse la tarea de análisis inicial, aún es la
+  // ÚNICA tarea de la misión (processSquadOutput crea el resto inmediatamente
+  // después). Sin este guard, la misión se cerraba en ese instante — antes
+  // de que el plan creara las tareas y especialistas, que quedaban huérfanos
+  // ejecutándose en una misión ya cerrada.
+  if (
+    tasks.length === 1 &&
+    tasks[0].type === 'mission_analysis' &&
+    mission.autoOrchestrate
+  ) {
+    return false
+  }
+
+  // Check if all mission tasks are completed or failed
   const allCompleted = tasks.every(
     t => t.status === 'completed' || t.status === 'failed'
   )

@@ -59,7 +59,7 @@ class TaskDispatcherService {
     task.status = 'in_progress'
     task.startedAt = new Date()
     await task.save()
-    await taskEventsService.emitTaskUpdate(task._id.toString(), {
+    await taskEventsService.emitTaskUpdated(task._id.toString(), {
       status: 'in_progress',
       message: 'Executing in ephemeral Goose container',
     })
@@ -99,7 +99,7 @@ class TaskDispatcherService {
           : 0,
       }
       await task.save()
-      await taskEventsService.emitTaskUpdate(task._id.toString(), {
+      await taskEventsService.emitTaskUpdated(task._id.toString(), {
         status: 'completed',
         output: task.output,
       })
@@ -109,7 +109,7 @@ class TaskDispatcherService {
       task.error = error.message
       task.output = { success: false, error: error.message }
       await task.save()
-      await taskEventsService.emitTaskUpdate(task._id.toString(), {
+      await taskEventsService.emitTaskUpdated(task._id.toString(), {
         status: 'failed',
         error: error.message,
       })
@@ -212,8 +212,15 @@ Ejecuta esta tarea y reporta SOLO el resultado final en español.`
       ready.map(task => this.executeSpecialistTask(task)),
     )
 
-    // Tras completar, verificar si hay misiones que marcar como completas
-    // (delegado al flujo existente checkMissionCompletion)
+    // Tras completar, verificar si la misión debe cerrarse (y limpiar a los
+    // especialistas — ciclo de vida efímero). Import dinámico para evitar
+    // circularidad: orchestration.service importa este módulo.
+    try {
+      const { checkMissionCompletion } = await import('./orchestration.service.js')
+      await checkMissionCompletion(missionId)
+    } catch (err: any) {
+      console.error('[dispatcher] mission completion check failed:', err.message)
+    }
   }
 }
 
