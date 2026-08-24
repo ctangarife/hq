@@ -6,6 +6,7 @@ import { mkdirp } from 'mkdirp'
 import PDFDocument from 'pdfkit'
 import { marked } from 'marked'
 import Task from '../models/Task'
+import Mission from '../models/Mission'
 
 const FILES_BASE_PATH = process.env.HQ_FILES_PATH || '/data/hq-files'
 
@@ -524,13 +525,24 @@ export class FileManagementService {
     await mkdirp(outputsPath)
 
     // First, try to get task outputs from database
-    const tasksFromDb = await Task.find({ missionId, status: 'completed' })
+    // Excluir mission_analysis: es el plan interno del orquestador (JSON de
+    // proceso), no un entregable del cliente — ocupaba un tercio del reporte
+    // y enterraba el contenido real al ir primero.
+    const tasksFromDb = await Task.find({
+      missionId,
+      status: 'completed',
+      type: { $ne: 'mission_analysis' },
+    })
       .select('title type output result description')
       .sort({ createdAt: 1 })
 
-    let consolidatedMarkdown = `# Mission Report: ${missionId}\n\n`
-    consolidatedMarkdown += `Generated: ${new Date().toISOString()}\n\n`
-    consolidatedMarkdown += `---\n\n`
+    // Header con el título REAL de la misión (antes: ID crudo) + brief
+    const mission = await Mission.findById(missionId).select('title description objective').lean()
+    let consolidatedMarkdown = `# ${mission?.title || `Misión ${missionId}`}\n\n`
+    if (mission?.objective) {
+      consolidatedMarkdown += `**Objetivo:** ${mission.objective}\n\n`
+    }
+    consolidatedMarkdown += `Generado: ${new Date().toISOString()}\n\n---\n\n`
 
     // Process tasks from database
     if (tasksFromDb.length > 0) {
@@ -562,6 +574,14 @@ export class FileManagementService {
 
         // Add to consolidated markdown
         if (content) {
+          // Sanitizar códigos ANSI/caracteres de control que Goose streamuea
+          // (defensa para outputs generados antes del fix en cleanGooseOutput)
+          content = content
+            .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+            .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+            // Residuos de escapes cortados: FFFD inicial y 'D' pegado a '**'
+            .replace(/^[\uFFFD]+/gm, '')
+            .replace(/^D(?=\*\*)/gm, '')
           // Extract markdown from result if it contains markdown code blocks
           let markdownContent = content
           const mdMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/)

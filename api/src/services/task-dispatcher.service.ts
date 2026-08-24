@@ -18,6 +18,7 @@
  */
 
 import Task, { ITask, TaskType } from '../models/Task.js'
+import Mission from '../models/Mission.js'
 import { dockerService } from './docker.service.js'
 import { taskEventsService } from './task-events.service.js'
 import { agentScoringService } from './agent-scoring.service.js'
@@ -76,8 +77,14 @@ class TaskDispatcherService {
         }).lean()
       }
 
-      // 3. Construir el prompt: personalidad del agente + datos de la tarea
-      const prompt = this.buildSpecialistPrompt(task, agent)
+      // 2b. Cargar la misión: el especialista necesita el CONTEXTO COMPLETO
+      // del brief (público, audiencia, tono) — no solo el título resumido de
+      // la tarea. Sin esto, el writer "desvía" del brief (ej: habló de curso
+      // en vez de early access) porque el plan del Squad Lead resume.
+      const mission = await Mission.findById(task.missionId).lean()
+
+      // 3. Construir el prompt: personalidad + brief completo + tarea
+      const prompt = this.buildSpecialistPrompt(task, agent, mission)
       const model = agent?.llmModel || undefined
 
       // 4. Ejecutar en Goose efímero
@@ -133,7 +140,7 @@ class TaskDispatcherService {
    *
    * Goose recibe todo por stdin como un prompt plano.
    */
-  private buildSpecialistPrompt(task: ITask, agent: any): string {
+  private buildSpecialistPrompt(task: ITask, agent: any, mission?: any): string {
     const personality = agent?.personality ||
       'You are a helpful AI assistant. Respond in Spanish.'
 
@@ -144,6 +151,28 @@ class TaskDispatcherService {
 
 `
     prompt += `${personality}\n\n`
+
+    // CONTEXTO COMPLETO DE LA MISIÓN: audiencia, tono y brief original.
+    // El título de la tarea es un resumen del plan — sin el brief, el
+    // especialista desvía el mensaje (ej: "curso" vs "early access").
+    if (mission) {
+      prompt += `# Contexto del proyecto (BRIEF — cíñete estrictamente a esto)\n`
+      prompt += `**Producto/Misión:** ${mission.title}\n\n`
+      if (mission.description) {
+        prompt += `${mission.description}\n\n`
+      }
+      if (mission.audience) {
+        prompt += `**Audiencia:** ${mission.audience}\n\n`
+      }
+      if (mission.tone) {
+        prompt += `**Tono obligatorio:** ${mission.tone}\n\n`
+      }
+      if (mission.context) {
+        prompt += `**Contexto adicional:** ${mission.context}\n\n`
+      }
+      prompt += `**REGLA DE FIDELIDAD:** No inventes objetivos que no están en el brief. Cada pieza que produzcas debe servir EXACTAMENTE al propósito descrito arriba.\n\n`
+    }
+
     prompt += `# Tarea: ${task.title}\n\n`
 
     if (task.description) {
