@@ -386,23 +386,6 @@ function drawZones() {  if (!mapContainer) return
     label.y = -hh - 30 + chipH / 2 - label.height / 2
     g.addChild(chip)
 
-    // Contador de agentes (discreto, dentro de la zona)
-    const agentCount = getAgentsInZone(zone.id).length
-    if (agentCount > 0) {
-      const countLabel = new Text({
-        text: `${agentCount}`,
-        style: {
-          fontSize: 13,
-          fontWeight: '700',
-          fill: zone.color,
-          align: 'center',
-        }
-      })
-      countLabel.x = -countLabel.width / 2
-      countLabel.y = 10
-      g.addChild(countLabel)
-    }
-
     // Interacción: hover ilumina + tooltip, click emite + ripple
     g.eventMode = 'static'
     g.on('pointerover', (e: any) => {

@@ -319,6 +319,19 @@ const tooltipAgents = computed<Agent[]>(() => {
   return agentsByZone.value.lounge
 })
 
+// Agentes VISIBLES en el mapa: los de misión activa o con actividad reciente
+// (7 días). El pool acumula agentes de misiones completadas desde hace meses
+// (zombies sin container) que saturaban el mapa — así el lounge respira.
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+const mapAgents = computed<Agent[]>(() => {
+  const cutoff = Date.now() - SEVEN_DAYS_MS
+  return agents.value.filter(a => {
+    if (a.status === 'active' || a.status === 'busy') return true
+    const updated = (a as any).updatedAt ? new Date((a as any).updatedAt).getTime() : 0
+    return updated > cutoff
+  })
+})
+
 // Poll agents status
 let pollInterval: number | null = null
 const startPolling = () => {
@@ -336,6 +349,10 @@ const stopPolling = () => {
 
 onMounted(async () => {
   await Promise.all([fetchActivities(), fetchAgents(), fetchTasks()])
+  // En viewports angostos el panel lateral exprime el mapa — colapsar
+  if (window.innerWidth < 1280) {
+    showActivityLog.value = false
+  }
   connectStream()
   startPolling()
   // Refrescar timestamps relativos
@@ -355,7 +372,7 @@ onUnmounted(() => {
     <div class="flex-1 relative">
       <IsometricMap
         ref="isoMapRef"
-        :agents="agents"
+        :agents="mapAgents"
         :tasks="tasks"
         @agent-click="handleAgentClick"
         @zone-click="handleZoneClick"

@@ -175,9 +175,10 @@ export class AgentAvatarSprite extends Container {
     this.addChild(this.emojiText)
     this.addChild(this.nameText)
 
-    // Nombre centrado bajo el anillo
+    // Nombre centrado bajo el anillo (visible solo en hover)
     this.nameText.anchor.set(0.5)
     this.nameText.y = 18
+    this.nameText.visible = false
 
     // Hover: spotlight + escala sutil (feedback inmediato)
     this.on('pointerover', () => { this.hoverTarget = 1 })
@@ -308,6 +309,9 @@ export class AgentAvatarSprite extends Container {
     this.spotlight.alpha = this.hoverAmount
     const hoverScale = 1 + this.hoverAmount * 0.07
     this.scale.set(hoverScale)
+    // El nombre SOLO se muestra en hover: 12 nombres fijos simultáneos
+    // eran el mayor ruido visual del mapa.
+    this.nameText.visible = this.hoverAmount > 0.25
     this.nameText.style.fill = this.hoverAmount > 0.5 ? 0xFFFFFF : 0xE2E8F0
 
     // Burbuja: fade in → hold → fade out → autodestruir
