@@ -499,6 +499,25 @@ export async function checkMissionCompletion(missionId: string): Promise<boolean
       await releaseSquadLead(mission.squadLeadId, missionId)
     }
 
+    // Ciclo de vida consistente con la filosofía efímera: los especialistas
+    // nacen con la misión y mueren con ella. Sus containers ya eran efímeros
+    // (runEphemeralTask), pero los Agent records se acumulaban para siempre
+    // (pool "reutilizable" que en la práctica nunca se reutilizaba: el
+    // scoring opera dentro de la misión activa). Solo el orquestador
+    // (squad_lead, con container persistente) sobrevive a la misión.
+    try {
+      const orquestadores = ['squad_lead', 'auditor']
+      const removed = await Agent.deleteMany({
+        currentMissionId: missionId,
+        role: { $nin: orquestadores },
+      })
+      if (removed.deletedCount > 0) {
+        console.log(`Mission ${missionId}: ${removed.deletedCount} specialist agents cleaned up (ephemeral lifecycle)`)
+      }
+    } catch (cleanupError: any) {
+      console.warn(`Mission ${missionId}: specialist cleanup failed (non-blocking): ${cleanupError.message}`)
+    }
+
     await addOrchestrationLog(missionId, {
       action: 'mission_completed',
       details: {
