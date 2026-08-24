@@ -544,55 +544,75 @@ export class FileManagementService {
     }
     consolidatedMarkdown += `Generado: ${new Date().toISOString()}\n\n---\n\n`
 
-    // Process tasks from database
+    // Procesar tareas separadas por rol en el ENTREGABLE:
+    //   1. Entregables (content_generation / custom con contenido) — lo que
+    //      el cliente pidió, va PRIMERO.
+    //   2. Anexos de investigación (web_search / data_analysis) — insumos
+    //      internos, van al final como apéndice.
+    // Antes el reporte se ordenaba por createdAt: la investigación abría el
+    // documento y los entregables quedaban perdidos en el medio ("descarga
+    // el proceso de pensamiento y no el entregable" — feedback real).
+    const deliverables: Array<{ title: string; content: string }> = []
+    const annexes: Array<{ title: string; content: string }> = []
+
     if (tasksFromDb.length > 0) {
       for (const task of tasksFromDb) {
-        const taskId = task._id.toString()
         const taskTitle = task.title || task.type || 'Unknown Task'
 
         // Try to get content from output.result or output directly
         let content = ''
         if (task.output?.result) {
-          // If result is a string, use it directly
           if (typeof task.output.result === 'string') {
             content = task.output.result
           } else if (task.output.result?.result && typeof task.output.result.result === 'string') {
-            // Nested result structure
             content = task.output.result.result
           } else {
-            // Try to stringify
             content = JSON.stringify(task.output.result, null, 2)
           }
         } else if (task.output) {
           content = typeof task.output === 'string' ? task.output : JSON.stringify(task.output, null, 2)
         }
 
-        // If no content in output, try partialOutput
         if (!content && (task as any).partialOutput) {
           content = (task as any).partialOutput
         }
 
-        // Add to consolidated markdown
-        if (content) {
-          // Sanitizar códigos ANSI/caracteres de control que Goose streamuea
-          // (defensa para outputs generados antes del fix en cleanGooseOutput)
-          content = content
-            .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-            .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-            // Residuos de escapes cortados: FFFD inicial y 'D' pegado a '**'
-            .replace(/^[\uFFFD]+/gm, '')
-            .replace(/^D(?=\*\*)/gm, '')
-          // Extract markdown from result if it contains markdown code blocks
-          let markdownContent = content
-          const mdMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/)
-          if (mdMatch) {
-            markdownContent = mdMatch[1]
-          }
+        // Descartar tareas sin entregable real (ej: revisión vacía de 9 chars)
+        if (!content || content.trim().length < 50) continue
 
-          consolidatedMarkdown += `## ${taskTitle}\n\n${markdownContent}\n\n---\n\n`
-        } else {
-          consolidatedMarkdown += `## ${taskTitle}\n\n*No output available*\n\n---\n\n`
+        // Sanitizar códigos ANSI/caracteres de control que Goose streamuea
+        content = content
+          .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+          .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+          .replace(/^[\uFFFD]+/gm, '')
+          .replace(/^D(?=\*\*)/gm, '')
+
+        // Extraer markdown si viene en code block
+        let markdownContent = content
+        const mdMatch = content.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/)
+        if (mdMatch) {
+          markdownContent = mdMatch[1]
         }
+
+        const isResearch = task.type === 'web_search' || task.type === 'data_analysis'
+        const bucket = isResearch ? annexes : deliverables
+        bucket.push({ title: taskTitle, content: markdownContent })
+      }
+    }
+
+    // Componer: ENTREGABLES primero
+    if (deliverables.length > 0) {
+      for (const d of deliverables) {
+        consolidatedMarkdown += `## ${d.title}\n\n${d.content}\n\n---\n\n`
+      }
+    }
+
+    // ANEXOS de investigación después (si existen)
+    if (annexes.length > 0) {
+      consolidatedMarkdown += `\n\n# Anexos: investigación de soporte\n\n`
+      consolidatedMarkdown += `*Insumos internos generados durante la misión.*\n\n---\n\n`
+      for (const a of annexes) {
+        consolidatedMarkdown += `## ${a.title}\n\n${a.content}\n\n---\n\n`
       }
     }
 
