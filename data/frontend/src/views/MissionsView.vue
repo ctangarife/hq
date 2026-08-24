@@ -444,8 +444,13 @@ const deleteMission = async (id: string) => {
 }
 
 // Consolidate mission outputs
+// La consolidación incluye pulido LLM por entregable — tarda 1-2 min.
+// Sin estado de carga, el botón parecía muerto durante todo el proceso.
+const consolidatingId = ref<string | null>(null)
+
 const consolidateMission = async (missionId: string) => {
-  if (!confirm('¿Consolidar outputs de esta misión en un PDF?')) return
+  if (!confirm('¿Consolidar outputs en un PDF pulido?\n\n(Incluye limpieza y mejora del contenido con IA — tarda 1-2 minutos)')) return
+  consolidatingId.value = missionId
   try {
     await resourcesService.consolidate(missionId)
 
@@ -480,6 +485,8 @@ const consolidateMission = async (missionId: string) => {
   } catch (err) {
     console.error('Error consolidating mission:', err)
     alert('Error al consolidar outputs: ' + (err as Error).message)
+  } finally {
+    consolidatingId.value = null
   }
 }
 
@@ -821,10 +828,18 @@ onMounted(() => {
             <button
               v-if="mission.status === 'completed' || mission.status === 'active'"
               @click="consolidateMission(mission._id)"
-              class="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-sm transition"
-              title="Consolidar outputs en PDF"
+              :disabled="consolidatingId === mission._id"
+              class="px-3 py-1 rounded text-sm transition flex items-center gap-1.5"
+              :class="consolidatingId === mission._id
+                ? 'bg-yellow-800 text-yellow-200 cursor-wait'
+                : 'bg-yellow-600 hover:bg-yellow-700 text-white'"
+              :title="consolidatingId === mission._id
+                ? 'Consolidando y puliendo con IA (1-2 min)...'
+                : 'Consolidar outputs en PDF'"
             >
-              📄 Consolidar
+              <span v-if="consolidatingId === mission._id" class="inline-block w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
+              <span v-else>📄</span>
+              {{ consolidatingId === mission._id ? 'Puliendo…' : 'Consolidar' }}
             </button>
 
             <!-- Restart Button -->
