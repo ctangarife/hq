@@ -1,3 +1,12 @@
+<script lang="ts">
+import { ref } from 'vue'
+// Estado de consolidación a NIVEL MÓDULO: sobrevive al desmontaje/remontaje
+// del componente. Si viviera en setup, volver a /missions durante el polish
+// (1-2 min) remontaría con estado null → botón disponible → doble
+// consolidación en paralelo (doble costo LLM + carrera sobre el PDF).
+const consolidatingId = ref<string | null>(null)
+</script>
+
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { missionsService, tasksService, attachmentsService, resourcesService, templatesService } from '@/services/api'
@@ -445,10 +454,14 @@ const deleteMission = async (id: string) => {
 
 // Consolidate mission outputs
 // La consolidación incluye pulido LLM por entregable — tarda 1-2 min.
-// Sin estado de carga, el botón parecía muerto durante todo el proceso.
-const consolidatingId = ref<string | null>(null)
-
+// consolidatingId vive a nivel módulo (ver bloque script superior) para
+// sobrevivir navegación ida/vuelta durante el proceso.
 const consolidateMission = async (missionId: string) => {
+  // Guard: no consolidaciones paralelas (doble costo LLM + carrera en el PDF)
+  if (consolidatingId.value) {
+    alert('Ya hay una consolidación en curso (puliendo con IA). Esperá a que termine.')
+    return
+  }
   if (!confirm('¿Consolidar outputs en un PDF pulido?\n\n(Incluye limpieza y mejora del contenido con IA — tarda 1-2 minutos)')) return
   consolidatingId.value = missionId
   try {
@@ -481,7 +494,9 @@ const consolidateMission = async (missionId: string) => {
     window.URL.revokeObjectURL(url)
 
     alert('✅ Outputs consolidados y PDF descargado')
-    await fetchMissions()
+    // El componente puede estar desmontado (usuario navegó a otra vista
+    // durante el polish) — refrescar solo si sigue vivo.
+    try { await fetchMissions() } catch { /* desmontado: sin efecto */ }
   } catch (err) {
     console.error('Error consolidating mission:', err)
     alert('Error al consolidar outputs: ' + (err as Error).message)
