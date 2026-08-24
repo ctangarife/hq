@@ -7,6 +7,7 @@ import PDFDocument from 'pdfkit'
 import { marked } from 'marked'
 import Task from '../models/Task'
 import Mission from '../models/Mission'
+import { litellmService } from './litellm.service.js'
 
 const FILES_BASE_PATH = process.env.HQ_FILES_PATH || '/data/hq-files'
 
@@ -518,6 +519,48 @@ export class FileManagementService {
   /**
    * Consolidar outputs de tareas en entregable final
    */
+  /**
+   * Pulir un entregable con LLM: limpia caracteres corruptos (emojis de Goose
+   * fragmentados en UTF-8 roto — secuencias tipo 'Ø=Þ¨' que los regex no
+   * pueden eliminar seguro) y humaniza el tono. REGLA DURA: no alterar
+   * hechos, números, ofertas ni CTAs — solo edición, no creación.
+   * Fallback: si el LLM falla, devuelve el original sanitizado.
+   */
+  private async polishDeliverable(content: string, missionTitle: string): Promise<string> {
+    try {
+      const polished = await litellmService.chatCompletion(
+        [
+          {
+            role: 'system',
+            content: `Eres un editor profesional de contenido para marketing B2B. Tu trabajo es pulir texto ya escrito, NO crear contenido nuevo.
+
+REGLAS ESTRICTAS:
+1. Elimina cualquier carácter basura o corrupto (símbolos raros, secuencias tipo 'Ø=Þ¨' o puntuación suelta al inicio de líneas — son residuos técnicos, NO los conserves ni los reinterpretes).
+2. Humaniza el tono: natural, directo, como lo escribiría una persona real para el canal indicado (email o redes).
+3. MANTÉN EXACTAMENTE los mismos hechos, números, precios, ofertas, plazos y llamados a la acción. CERO cambios de significado.
+4. NO añadas información, ofertas ni emojis que no estén.
+5. Conserva el idioma original (español).
+6. Responde SOLO con el texto final pulido, sin comentarios ni formato extra.`,
+          },
+          {
+            role: 'user',
+            content: `Contexto del proyecto: ${missionTitle}\n\nTexto a pulir:\n\n${content}`,
+          },
+        ],
+        { temperature: 0.3 },
+      )
+      // Validación mínima: el pulido no debe ser mucho más corto (alucinación)
+      if (polished && polished.length > content.length * 0.5) {
+        return polished.trim()
+      }
+      console.warn('[consolidate] polish too short, keeping original')
+      return content
+    } catch (err: any) {
+      console.warn(`[consolidate] polish failed (${err.message}), keeping original`)
+      return content
+    }
+  }
+
   async consolidateMissionOutputs(missionId: string): Promise<string> {
     const missionPath = path.join(this.basePath, 'missions', missionId)
     const tasksPath = path.join(missionPath, 'tasks')
@@ -595,25 +638,42 @@ export class FileManagementService {
         }
 
         const isResearch = task.type === 'web_search' || task.type === 'data_analysis'
-        const bucket = isResearch ? annexes : deliverables
-        bucket.push({ title: taskTitle, content: markdownContent })
+        if (isResearch) {
+          annexes.push({ title: taskTitle, content: markdownContent })
+        } else {
+          // Título de ENTREGABLE, no de tarea: el cliente no lee "Redactar X"
+          // — lee "X". (El documento es el producto, no el proceso.)
+          const cleanTitle = taskTitle
+            .replace(/^(Redactar|Crear|Escribir|Generar|Investigar)\s+/i, '')
+            .replace(/\s*\(.*?\)\s*$/, '')
+          deliverables.push({ title: cleanTitle, content: markdownContent })
+        }
       }
     }
 
-    // Componer: ENTREGABLES primero
+    // Pulir ENTREGABLES con LLM: limpia residuos técnicos (emojis fragmentados)
+    // y humaniza el tono. Solo entregables — la investigación queda cruda
+    // como insumo. Fallback al original si el polish falla.
+    if (deliverables.length > 0) {
+      const missionTitle = mission?.title || missionId
+      for (const d of deliverables) {
+        d.content = await this.polishDeliverable(d.content, missionTitle)
+      }
+    }
+
+    // Componer: SOLO entregables en el documento. La investigación de
+    // soporte NO va al PDF del cliente — es insumo interno (queda accesible
+    // en las tareas). Un entregable con anexos de proceso dentro sigue
+    // siendo "proceso de pensamiento con formato" (feedback real).
     if (deliverables.length > 0) {
       for (const d of deliverables) {
         consolidatedMarkdown += `## ${d.title}\n\n${d.content}\n\n---\n\n`
       }
     }
 
-    // ANEXOS de investigación después (si existen)
+    // Nota al pie discreta si hubo investigación de soporte (sin incluirla)
     if (annexes.length > 0) {
-      consolidatedMarkdown += `\n\n# Anexos: investigación de soporte\n\n`
-      consolidatedMarkdown += `*Insumos internos generados durante la misión.*\n\n---\n\n`
-      for (const a of annexes) {
-        consolidatedMarkdown += `## ${a.title}\n\n${a.content}\n\n---\n\n`
-      }
+      consolidatedMarkdown += `\n*Esta pieza fue producida con apoyo de investigación interna (${annexes.length} estudios de soporte disponibles a pedido).*\n`
     }
 
     // Also check for physical files in tasks directory (for backwards compatibility)
