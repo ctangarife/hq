@@ -115,6 +115,11 @@ export class AgentAvatarSprite extends Container {
   private hoverAmount: number = 0
   private hoverTarget: number = 0
 
+  // Burbuja de actividad (port del showSpeech del RobotSprite original)
+  private bubble: Container | null = null
+  private bubbleStart: number = 0
+  private bubbleDuration: number = 0
+
   // Sistema de movimiento (igual que RobotSprite)
   private isMoving: boolean = false
   private movementStartTime: number = 0
@@ -305,6 +310,23 @@ export class AgentAvatarSprite extends Container {
     this.scale.set(hoverScale)
     this.nameText.style.fill = this.hoverAmount > 0.5 ? 0xFFFFFF : 0xE2E8F0
 
+    // Burbuja: fade in → hold → fade out → autodestruir
+    if (this.bubble) {
+      const elapsed = performance.now() - this.bubbleStart
+      const total = this.bubbleDuration
+      let alpha = 1
+      if (elapsed < 180) alpha = elapsed / 180
+      else if (elapsed > total - 350) alpha = Math.max((total - elapsed) / 350, 0)
+      this.bubble.alpha = alpha
+      // Flotación sutil
+      this.bubble.y = Math.sin(this.animTime * 2) * 2
+      if (elapsed >= total) {
+        this.removeChild(this.bubble)
+        this.bubble.destroy({ children: true })
+        this.bubble = null
+      }
+    }
+
     if (this.isMoving) {
       this.updateMovement()
     }
@@ -383,8 +405,67 @@ export class AgentAvatarSprite extends Container {
     this.emojiText.scale.set(1 + Math.sin(this.animTime * 15) * 0.3)
   }
 
+  /**
+   * Burbuja de actividad flotante (port del showSpeech de RobotSprite):
+   * aparece, dura `duration` ms y se desvanece. Fade in 180ms / out 350ms.
+   * Nunca permanente — lección de nameplates MMO (mínimo elemento flotante).
+   */
+  showBubble(text: string, duration: number = 2000): void {
+    if (this.bubble) {
+      this.removeChild(this.bubble)
+      this.bubble.destroy({ children: true })
+      this.bubble = null
+    }
+
+    const bubble = new Container()
+    const label = new Text({
+      text,
+      style: {
+        fontSize: 11,
+        fontWeight: '500',
+        fill: 0xE2E8F0,
+        wordWrap: true,
+        wordWrapWidth: 140,
+        align: 'center',
+      },
+    })
+
+    const pad = 9
+    const w = label.width + pad * 2
+    const h = label.height + pad
+    const bg = new Graphics()
+    bg.beginPath()
+    bg.roundRect(-w / 2, -74 - h, w, h, 8)
+    bg.fill({ color: 0x0F1424, alpha: 0.92 })
+    bg.beginPath()
+    bg.roundRect(-w / 2, -74 - h, w, h, 8)
+    bg.stroke({ width: 1, color: 0x94A3B8, alpha: 0.4 })
+    // Colita hacia el avatar
+    bg.beginPath()
+    bg.moveTo(-4, -74)
+    bg.lineTo(4, -74)
+    bg.lineTo(0, -68)
+    bg.closePath()
+    bg.fill({ color: 0x0F1424, alpha: 0.92 })
+
+    label.x = -label.width / 2
+    label.y = -74 - h + (h - label.height) / 2
+
+    bubble.addChild(bg)
+    bubble.addChild(label)
+    bubble.alpha = 0
+    this.addChild(bubble)
+
+    this.bubble = bubble
+    this.bubbleStart = performance.now()
+    this.bubbleDuration = duration
+  }
+
   destroy(): void {
     Ticker.shared.remove(this.animate, this)
+    if (this.bubble) {
+      this.bubble = null
+    }
     super.destroy()
   }
 }

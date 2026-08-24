@@ -49,6 +49,52 @@ let floorContainer: Container | null = null
 let furnitureContainer: Container | null = null
 const robotSprites = new Map<string, AgentAvatarSprite>()
 
+// Vida ambiental: overlays de zona (respiración), hover actual y scheduler zZz
+const zoneOverlays = new Map<string, Graphics>()
+let hoveredZoneId: string | null = null
+let breatheTime = 0
+let zzzTimer = 0
+
+/**
+ * Tick ambiental (uno solo para todo el mapa):
+ * - Zonas activas respiran (pulso alpha 3s SOLO con agentes; quieta si vacía
+ *   — abundancia honesta estilo Animal Crossing)
+ * - Scheduler zZz: un agente idle del lounge emite "zZz" cada ~8s
+ */
+function ambientTick(ticker: Ticker) {
+  breatheTime = ticker.lastTime / 1000
+
+  for (const [zoneId, overlay] of zoneOverlays) {
+    // Solo las zonas de trabajo respiran (lounge = descanso, quieta)
+    if (zoneId !== 'work-area' && zoneId !== 'work-control') continue
+    if (hoveredZoneId === zoneId) {
+      overlay.alpha = 1
+      continue
+    }
+    const hasAgents = getAgentsInZone(zoneId).length > 0
+    if (hasAgents) {
+      // Ciclo respiración: 3s, rango sutil 0.10–0.80 del overlay (fill 0.14)
+      overlay.alpha = 0.45 + Math.sin(breatheTime * ((Math.PI * 2) / 3)) * 0.35
+    } else {
+      overlay.alpha = 0
+    }
+  }
+
+  // zZz scheduler
+  zzzTimer += ticker.deltaMS
+  if (zzzTimer >= 8000) {
+    zzzTimer = 0
+    emitZzz()
+  }
+}
+
+function emitZzz() {
+  const loungers = props.agents.filter(a => getAgentZone(a) === 'lounge')
+  if (loungers.length === 0) return
+  const pick = loungers[Math.floor(Math.random() * loungers.length)]
+  robotSprites.get(pick._id)?.showBubble('zZz 💤', 2400)
+}
+
 // Zonas del mapa HQ - colores armonizados con la paleta del bar nocturno
 // (ciruela/esmeralda/latón — matchean los anillos de estado y la decoración)
 const zones: Zone[] = [
@@ -168,7 +214,79 @@ function spawnRipple(x: number, y: number, color: number) {
   Ticker.shared.add(tick)
 }
 
+/**
+ * Chispas de celebración (400ms — regla juice 300-400ms, máx 8 partículas):
+ * burst radial verde/oro con gravedad suave. Disparado al completar tareas.
+ */
+function spawnParticles(x: number, y: number) {
+  if (!mapContainer) return
+  const burst = new Container()
+  burst.x = x
+  burst.y = y - 24
+  mapContainer.addChild(burst)
+
+  const colors = [0x2ECC8F, 0xD9A441, 0xE8C894]
+  const parts: Array<{ g: Graphics; vx: number; vy: number }> = []
+  for (let i = 0; i < 8; i++) {
+    const g = new Graphics()
+    g.beginPath()
+    g.circle(0, 0, 1.5 + Math.random() * 1.5)
+    g.fill({ color: colors[i % colors.length], alpha: 0.9 })
+    const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.5
+    const speed = 35 + Math.random() * 45
+    burst.addChild(g)
+    parts.push({ g, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed * 0.6 - 35 })
+  }
+
+  const start = performance.now()
+  const duration = 400
+
+  const tick = () => {
+    const t = Math.min((performance.now() - start) / duration, 1)
+    const dt = 1 / 60
+    for (const p of parts) {
+      p.vy += 130 * dt // gravedad
+      p.g.x += p.vx * dt
+      p.g.y += p.vy * dt
+      p.g.alpha = (1 - t) * 0.9
+    }
+    if (t >= 1) {
+      Ticker.shared.remove(tick)
+      burst.destroy({ children: true })
+    }
+  }
+
+  Ticker.shared.add(tick)
+}
+
+/**
+ * API expuesta para el padre (ActivityView): vida dirigida por eventos SSE.
+ */
+function celebrate() {
+  // Chispas sobre un agente que trabaja (random) o el centro del Work Area
+  const workers = getAgentsInZone('work-area')
+  if (workers.length > 0) {
+    const w = workers[Math.floor(Math.random() * workers.length)]
+    const s = robotSprites.get(w._id)
+    if (s) {
+      spawnParticles(s.x, s.y)
+      return
+    }
+  }
+  const zone = zones.find(z => z.id === 'work-area')
+  if (zone) spawnParticles(zone.x, zone.y)
+}
+
+function showAgentBubble(agentId: string, text: string) {
+  robotSprites.get(agentId)?.showBubble(text, 2000)
+}
+
+defineExpose({ celebrate, showAgentBubble })
+
 function drawZones() {  if (!mapContainer) return
+
+  // Se repueblan en cada redraw (los Graphics se recrean)
+  zoneOverlays.clear()
 
   zones.forEach(zone => {
     const g = new Graphics()
@@ -235,6 +353,7 @@ function drawZones() {  if (!mapContainer) return
     hoverOverlay.fill({ color: zone.color, alpha: 0.14 })
     hoverOverlay.alpha = 0
     g.addChild(hoverOverlay)
+    zoneOverlays.set(zone.id, hoverOverlay)
 
     // Etiqueta como chip elegante: pill oscuro translúcido + punto de color
     const label = new Text({
@@ -287,6 +406,7 @@ function drawZones() {  if (!mapContainer) return
     // Interacción: hover ilumina + tooltip, click emite + ripple
     g.eventMode = 'static'
     g.on('pointerover', (e: any) => {
+      hoveredZoneId = zone.id
       hoverOverlay.alpha = 1
       const p = e.global
       emit('zoneHover', {
@@ -297,6 +417,7 @@ function drawZones() {  if (!mapContainer) return
       })
     })
     g.on('pointerout', () => {
+      if (hoveredZoneId === zone.id) hoveredZoneId = null
       hoverOverlay.alpha = 0
       emit('zoneLeave')
     })
@@ -506,10 +627,13 @@ watch(() => [props.agents, props.tasks], () => {
 onMounted(async () => {
   await initPixi()
   window.addEventListener('resize', handleResize)
+  // Vida ambiental: respiración de zonas + scheduler zZz
+  Ticker.shared.add(ambientTick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  Ticker.shared.remove(ambientTick)
 
   robotSprites.forEach(sprite => sprite.destroy())
   robotSprites.clear()

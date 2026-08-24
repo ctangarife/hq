@@ -3,6 +3,28 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { activityService, agentsService, tasksService } from '@/services/api'
 import IsometricMap from '@/components/isometric/IsometricMap.vue'
 
+// Ref al mapa para dirigir su vida con eventos SSE (celebrate/burbujas)
+const isoMapRef = ref<InstanceType<typeof IsometricMap> | null>(null)
+
+/**
+ * Traducir eventos SSE a vida en el mapa:
+ * - tarea completada → chispas de celebración
+ * - si el mensaje menciona a un agente → burbuja sobre él
+ */
+function mapEventToLife(evt: { type: string; message?: string }) {
+  const iso = isoMapRef.value
+  if (!iso) return
+  if (evt.type !== 'task') return
+
+  iso.celebrate()
+
+  const msg = String(evt.message || '')
+  const agent = agents.value.find(a => a.name && msg.includes(a.name))
+  if (agent) {
+    iso.showAgentBubble(agent._id, msg.slice(0, 42))
+  }
+}
+
 interface Activity {
   _id: string
   type: 'mission' | 'task' | 'agent' | 'container'
@@ -244,6 +266,9 @@ const connectStream = () => {
         if (activities.value.length > 50) {
           activities.value = activities.value.slice(0, 50)
         }
+
+        // Vida en el mapa dirigida por eventos (chispas / burbujas)
+        mapEventToLife(data)
       } catch (e) {
         console.error('Error parsing SSE data:', e)
       }
@@ -329,6 +354,7 @@ onUnmounted(() => {
     <!-- Mapa Isométrico — protagonista, pantalla completa -->
     <div class="flex-1 relative">
       <IsometricMap
+        ref="isoMapRef"
         :agents="agents"
         :tasks="tasks"
         @agent-click="handleAgentClick"
