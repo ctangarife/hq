@@ -8,7 +8,8 @@ const consolidatingId = ref<string | null>(null)
 </script>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+// ref viene del bloque script superior (ámbito compartido del módulo)
+import { onMounted } from 'vue'
 import { missionsService, tasksService, attachmentsService, resourcesService, templatesService } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
