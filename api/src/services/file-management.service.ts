@@ -547,7 +547,7 @@ REGLAS ESTRICTAS:
             content: `Contexto del proyecto: ${missionTitle}\n\nTexto a pulir:\n\n${content}`,
           },
         ],
-        { temperature: 0.3 },
+        { temperature: 0.3, model: 'glm-5.2' },
       )
       // Validación mínima: el pulido no debe ser mucho más corto (alucinación)
       if (polished && polished.length > content.length * 0.5) {
