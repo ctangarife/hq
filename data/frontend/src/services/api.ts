@@ -33,6 +33,8 @@ export const missionsService = {
   getAll: () => api.get('/missions'),
   getById: (id: string) => api.get(`/missions/${id}`),
   create: (data: any) => api.post('/missions', data),
+  // Enriquecedor: idea breve → brief profesional (glm-5.2), no crea nada
+  enrich: (seed: string) => api.post('/missions/enrich', { seed }, { timeout: 120000 }),
   update: (id: string, data: any) => api.put(`/missions/${id}`, data),
   delete: (id: string) => api.delete(`/missions/${id}`),
   orchestrate: (id: string) => api.post(`/missions/${id}/orchestrate`),

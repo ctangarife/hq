@@ -457,6 +457,39 @@ const deleteMission = async (id: string) => {
 // La consolidación incluye pulido LLM por entregable — tarda 1-2 min.
 // consolidatingId vive a nivel módulo (ver bloque script superior) para
 // sobrevivir navegación ida/vuelta durante el proceso.
+// ── Enriquecedor de misiones ──
+// Una línea del usuario → brief profesional vía glm-5.2 → formulario lleno
+// (editable). Elimina la fricción de escribir el brief completo a mano.
+const enrichSeed = ref('')
+const enriching = ref(false)
+
+const enrichMission = async () => {
+  if (!enrichSeed.value.trim() || enrichSeed.value.trim().length < 3) {
+    alert('Escribí tu idea primero (mínimo 3 caracteres)')
+    return
+  }
+  enriching.value = true
+  try {
+    const { data } = await missionsService.enrich(enrichSeed.value.trim())
+    const b = data.brief
+    formData.value.title = b.title || formData.value.title
+    formData.value.description = b.description || formData.value.description
+    formData.value.objective = b.objective || formData.value.objective
+    formData.value.context = b.context || formData.value.context
+    formData.value.audience = b.audience || formData.value.audience
+    formData.value.deliverableFormat = b.deliverableFormat || formData.value.deliverableFormat
+    formData.value.successCriteria = b.successCriteria || formData.value.successCriteria
+    formData.value.constraints = b.constraints || formData.value.constraints
+    formData.value.tone = b.tone || formData.value.tone
+    // Desplegar la sección adicional para que el usuario vea lo enriquecido
+    showAdditionalContext.value = true
+  } catch (err: any) {
+    alert('Error al enriquecer: ' + (err.response?.data?.error || err.message))
+  } finally {
+    enriching.value = false
+  }
+}
+
 const consolidateMission = async (missionId: string) => {
   // Guard: no consolidaciones paralelas (doble costo LLM + carrera en el PDF)
   if (consolidatingId.value) {
@@ -912,6 +945,35 @@ onMounted(() => {
 
         <!-- Scrollable Content -->
         <div class="p-4 overflow-y-auto flex-1">
+          <!-- ✨ Enriquecedor: idea en una línea → brief completo -->
+          <div class="mb-4 p-3 rounded-lg bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-700/40">
+            <label class="block text-purple-200 text-sm font-medium mb-2">
+              ✨ Describí tu idea en una línea
+              <span class="text-purple-400/70 font-normal text-xs">— la IA la convierte en brief completo</span>
+            </label>
+            <div class="flex gap-2">
+              <input
+                v-model="enrichSeed"
+                type="text"
+                :disabled="enriching"
+                class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white text-sm"
+                placeholder="Ej: 3 posts para instagram de mi cafetería de barrio"
+                @keyup.enter="enrichMission"
+              />
+              <button
+                type="button"
+                @click="enrichMission"
+                :disabled="enriching"
+                class="px-4 py-2 rounded text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap"
+                :class="enriching ? 'bg-purple-900 text-purple-300 cursor-wait' : 'bg-purple-600 hover:bg-purple-700 text-white'"
+              >
+                <span v-if="enriching" class="inline-block w-3 h-3 border-2 border-purple-300 border-t-transparent rounded-full animate-spin"></span>
+                {{ enriching ? 'Enriqueciendo…' : '✨ Enriquecer' }}
+              </button>
+            </div>
+            <p v-if="enriching" class="text-purple-300/70 text-xs mt-1.5">Redactando brief profesional (~15-30s)…</p>
+          </div>
+
           <form @submit.prevent="createMission" class="space-y-4">
           <div>
             <label class="block text-gray-400 text-sm mb-1">Título *</label>

@@ -7,8 +7,63 @@ import {
 } from '../services/orchestration.service.js'
 import { activityLog } from '../services/activity-logger.service.js'
 import { fileManagementService } from '../services/file-management.service.js'
+import { litellmService } from '../services/litellm.service.js'
 
 const router = Router()
+
+// POST /api/missions/enrich - Enriquecer una idea breve a brief profesional
+//
+// El brief completo mejora drásticamente la fidelidad del contenido (validado:
+// el writer desviaba sin él), pero escribirlo es fricción para el usuario.
+// Este endpoint expande una idea de una línea a un brief estructurado que el
+// usuario revisa/edita ANTES de crear la misión — no crea nada por sí mismo.
+router.post('/enrich', async (req, res, next) => {
+  try {
+    const { seed } = req.body
+    if (!seed || typeof seed !== 'string' || seed.trim().length < 3) {
+      return res.status(400).json({ error: 'seed (idea breve) es requerido' })
+    }
+
+    const system = `Eres un estratega de contenido y marketing senior. Recibes una idea BREVE de misión y la conviertes en un BRIEF profesional completo para un equipo de agentes IA de contenido.
+
+REGLAS:
+- Enriquece la idea: propón entregables concretos (con formato, extensión y cantidad), audiencia, tono y criterios de éxito.
+- NO inventes datos verificables específicos (cifras de mercado, precios) — usa directrices razonables.
+- Mantén el español natural y directo.
+- Responde SOLO con un JSON válido, sin markdown, con EXACTAMENTE estos campos:
+{"title": "conciso", "description": "brief detallado con entregables numerados", "objective": "una línea", "context": "contexto del proyecto", "audience": "audiencia específica", "tone": "tono recomendado", "deliverableFormat": "formato de entrega", "successCriteria": "qué define el éxito", "constraints": "restricciones o 'ninguna'", "priority": "high|medium|low"}`
+
+    const user = `Idea del usuario: "${seed.trim()}"`
+
+    const content = await litellmService.chatCompletion(
+      [{ role: 'system', content: system }, { role: 'user', content: user }],
+      { temperature: 0.5, model: 'glm-5.2' },
+    )
+
+    // Parse tolerante (el modelo puede envolver en ```json)
+    let cleaned = content.trim()
+    const mdMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    if (mdMatch) cleaned = mdMatch[1]
+    const firstBrace = cleaned.indexOf('{')
+    if (firstBrace > 0) cleaned = cleaned.slice(firstBrace)
+    // Trailing commas que rompen JSON.parse
+    cleaned = cleaned.replace(/,\s*([}\]])/g, '$1')
+
+    let brief
+    try {
+      brief = JSON.parse(cleaned)
+    } catch {
+      return res.status(502).json({
+        error: 'El modelo no devolvió un brief válido',
+        raw: content.slice(0, 300),
+      })
+    }
+
+    res.json({ brief })
+  } catch (error) {
+    next(error)
+  }
+})
 
 // GET /api/missions - List all missions
 router.get('/', async (req, res, next) => {
