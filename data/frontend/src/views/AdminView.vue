@@ -227,6 +227,30 @@ function roleLabel(role: string): string {
   return labels[role] || role;
 }
 
+// Descripciones de roles para el selector de invitación
+const roleDescriptions: Record<string, { label: string; desc: string; perms: string }> = {
+  workspace_owner: {
+    label: "Propietario",
+    desc: "Control total: crea misiones, invita gente, gestiona prompts, puede eliminar el workspace.",
+    perms: "TODO",
+  },
+  workspace_manager: {
+    label: "Admin",
+    desc: "Casi todo control: crea misiones, invita gente, ajusta prompts. No puede eliminar el workspace.",
+    perms: "Menos eliminar",
+  },
+  workspace_member: {
+    label: "Miembro",
+    desc: "Crea misiones, ve resultados y descarga entregables. No puede invitar ni cambiar configuración.",
+    perms: "Crear + ver",
+  },
+  workspace_viewer: {
+    label: "Lector",
+    desc: "Solo ve resultados y descarga entregables. No puede crear ni modificar nada.",
+    perms: "Solo lectura",
+  },
+};
+
 function invitationStatus(inv: Invitation): string {
   if (inv.acceptedAt) return "aceptada";
   if (inv.revokedAt) return "revocada";
@@ -583,6 +607,10 @@ onMounted(() => {
               <option value="workspace_member">Miembro</option>
               <option value="workspace_viewer">Lector</option>
             </select>
+            <p class="text-slate-500 text-xs mt-1.5 leading-snug transition-all">
+              <span class="text-purple-300 font-medium">{{ roleDescriptions[inviteRole]?.label }}:</span>
+              {{ roleDescriptions[inviteRole]?.desc }}
+            </p>
           </div>
           <div class="flex items-end">
             <button @click="sendInvitation()" :disabled="inviting || !inviteEmail || (!inviteWsId && !newWorkspaceName.trim())" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50">
