@@ -1,24 +1,23 @@
 import { Request, Response, NextFunction } from 'express'
+import jwt from 'jsonwebtoken'
 import { authService, AuthTokenPayload } from '../services/auth.service.js'
 
 /**
- * Auth Middleware (reemplazado por JWT-only).
+ * Auth Middleware — JWT ONLY (sin UI_SECRET para datos).
  *
- * ANTES: aceptaba x-ui-secret (puerta compartida expuesta en el bundle JS).
- * AHORA: SOLO JWT de usuario autenticado. Sin login, no hay acceso.
- *
- * Para agents containers internos: ver jwt-auth.ts → agentAuthMiddleware.
+ * El require() inline que usaba antes no funciona en ESM (type:module) —
+   lanzaba ReferenceError que el catch interpretaba como token inválido,
+   causando 401 en TODAS las requests con JWT válido (bug del deploy).
  */
 
 const JWT_SECRET = process.env.API_JWT_SECRET || 'hq-dev-secret-change-in-prod'
 
 export interface AuthRequest extends Request {
-  user?: any
+  user?: AuthTokenPayload
   workspaceId?: string
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  // JWT ONLY — el UI_SECRET ya no da acceso a datos
   const authHeader = req.headers.authorization
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -31,8 +30,8 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   const token = authHeader.substring(7)
 
   try {
-    const jwt = require('jsonwebtoken')
-    const payload = jwt.verify(token, JWT_SECRET)
+    // Verificar JWT con el servicio (import ESM, no require)
+    const payload = authService.verifyToken(token)
     req.user = payload
     req.workspaceId = payload.workspaceId
     next()
