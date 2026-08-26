@@ -7,12 +7,15 @@ import { activityLog } from '../services/activity-logger.service.js'
 import { agentScoringService } from '../services/agent-scoring.service.js'
 import { findAgentByIdOrContainerId } from '../utils/agent-helpers.js'
 
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
+import { getWorkspaceScope } from '../middleware/workspace-filter.js'
+
 const router = Router()
 
 // GET /api/agents - List all agents
 router.get('/', async (req, res, next) => {
   try {
-    const agents = await Agent.find().sort({ createdAt: -1 })
+    const agents = await Agent.find((req as AuthenticatedRequest).user?.role === 'super_admin' ? {} : { $or: [{ workspaceId: (req as AuthenticatedRequest).user?.workspaceId }, { workspaceId: { $exists: false } }] }).sort({ createdAt: -1 })
     res.json(agents)
   } catch (error) {
     next(error)

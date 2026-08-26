@@ -12,6 +12,8 @@ import { agentScoringService } from '../services/agent-scoring.service.js'
 import { taskDependenciesService } from '../services/dependencies.service.js'
 import { findAgentByIdOrContainerId, getContainerId } from '../utils/agent-helpers.js'
 
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
+
 const router = Router()
 
 // Helper para enriquecer tareas con información de misión y agente
@@ -85,7 +87,7 @@ async function enrichTasks(tasks: any[]) {
 }
 
 // GET /api/tasks - List all tasks
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: any, res, next) => {
   try {
     const { missionId, status, assignedTo } = req.query
 
@@ -93,6 +95,18 @@ router.get('/', async (req, res, next) => {
     if (missionId) filter.missionId = missionId
     if (status) filter.status = status
     if (assignedTo) filter.assignedTo = assignedTo
+
+    // Aislamiento: si el usuario NO es super_admin, solo ver tareas
+    // de misiones de SU workspace
+    const user = req.user
+    if (user && user.role !== 'super_admin' && user.workspaceId) {
+      const MissionModel = (await import('../models/Mission.js')).default
+      const myMissionIds = await MissionModel
+        .find({ workspaceId: user.workspaceId })
+        .select('_id')
+        .lean()
+      filter.missionId = { $in: myMissionIds.map(m => m._id.toString()) }
+    }
 
     const tasks = await Task.find(filter)
       .sort({ createdAt: -1 })

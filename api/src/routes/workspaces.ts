@@ -2,6 +2,8 @@ import { Router } from 'express'
 import { workspaceService } from '../services/workspace.service.js'
 import { WorkspaceRole } from '../models/Workspace.js'
 
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
+
 const router = Router()
 
 /**
@@ -24,8 +26,15 @@ const router = Router()
  *   PATCH  /api/workspaces/:id/members/:userId
  */
 
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
+    // Aislamiento multi-tenant: super_admin ve todos, resto solo el suyo
+    const user = req.user
+    if (user && user.role !== 'super_admin' && user.workspaceId) {
+      const Workspace = (await import('../models/Workspace.js')).default
+      const ws = await Workspace.findById(user.workspaceId).lean()
+      return res.json(ws ? [ws] : [])
+    }
     const workspaces = await workspaceService.listWorkspaces()
     res.json(workspaces)
   } catch (e) { next(e) }

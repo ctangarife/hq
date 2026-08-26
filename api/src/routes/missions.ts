@@ -8,6 +8,8 @@ import {
 import { activityLog } from '../services/activity-logger.service.js'
 import { fileManagementService } from '../services/file-management.service.js'
 import { litellmService } from '../services/litellm.service.js'
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
+import { getMissionFilter, getWorkspaceScope } from '../middleware/workspace-filter.js'
 
 const router = Router()
 
@@ -66,11 +68,11 @@ REGLAS:
 })
 
 // GET /api/missions - List all missions
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { status, assignedTo } = req.query
 
-    const filter: any = {}
+    const filter: any = getMissionFilter(req) // aislamiento por workspace
     if (status) filter.status = status
     if (assignedTo) filter.squadIds = assignedTo
 
@@ -101,9 +103,15 @@ router.get('/:id', async (req, res, next) => {
 })
 
 // POST /api/missions - Create mission
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { title, description, objective, priority, squadIds } = req.body
+    const { title, description, objective, priority, squadIds, workspaceId: bodyWsId } = req.body
+
+    // Aislamiento: asignar el workspace del usuario automáticamente.
+    // super_admin puede especificar cualquier workspaceId vía body.
+    // El resto: SIEMPRE su propio workspace (ignora lo que venga en el body).
+    const scope = getWorkspaceScope(req)
+    const wsId = scope.isGlobal ? (bodyWsId || undefined) : (scope.workspaceId || undefined)
 
     const mission = new Mission({
       title,
@@ -112,7 +120,8 @@ router.post('/', async (req, res, next) => {
       priority: priority || 'medium',
       squadIds: squadIds || [],
       status: 'draft',
-      taskIds: []
+      taskIds: [],
+      workspaceId: wsId,
     })
 
     const saved = await mission.save()
