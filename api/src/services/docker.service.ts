@@ -222,7 +222,9 @@ export class DockerService {
       await container.start()
 
       // Capturar stdout (polling — container.wait() se cuelga en DinD)
-      const output = await this.captureContainerOutput(container, options.timeoutMs ?? 300000)
+      // 10 min: los prompts largos (4000+ chars con brief editorial)
+      // tardan más de 5 min en modelos como glm-5.2
+      const output = await this.captureContainerOutput(container, options.timeoutMs ?? 600000)
       console.log(`[ephemeral] task completed (${output.length} chars output)`)
       // Cleanup manual (sin AutoRemove)
       try { await container.remove({ force: true }) } catch {}
