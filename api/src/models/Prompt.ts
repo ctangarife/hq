@@ -28,6 +28,7 @@ export const PROMPT_KEYS = [
   'squad_lead',
   'researcher',
   'developer',
+  'designer',
   'writer',
   'analyst',
   'auditor',
@@ -37,6 +38,7 @@ export const PROMPT_KEYS = [
   'auditor_review',
   'web_search',
   'content_generation',
+  'image_prompt',
   'data_analysis',
   'code_execution',
 ] as const

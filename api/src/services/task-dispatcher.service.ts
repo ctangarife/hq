@@ -29,6 +29,7 @@ const SPECIALIST_TASK_TYPES: TaskType[] = [
   'web_search',
   'data_analysis',
   'content_generation',
+  'image_prompt',
   'code_execution',
   'custom',
 ]

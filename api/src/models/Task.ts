@@ -4,6 +4,7 @@ export type TaskType =
   | 'web_search'
   | 'data_analysis'
   | 'content_generation'
+  | 'image_prompt'
   | 'code_execution'
   | 'custom'
   | 'mission_analysis'   // Squad Lead analyzes mission
@@ -59,6 +60,7 @@ const taskSchema = new Schema<ITask>({
       'web_search',
       'data_analysis',
       'content_generation',
+      'image_prompt',
       'code_execution',
       'custom',
       'mission_analysis',
