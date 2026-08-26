@@ -244,20 +244,33 @@ export class DockerService {
    */
   private async captureContainerOutput(container: any, timeoutMs: number): Promise<string> {
     // Esperar a que el container TERMINE, luego leer logs en un solo golpe.
-    // El streaming concurrente (follow:true + wait() en paralelo) desalineaba
-    // los frames del stream multiplexado → bytes corruptos en cada línea.
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
-        try { container.kill() } catch {}
+        // .catch() — el container puede ya estar muerto/removido.
+        // Sin esto, la rejection no manejada crashea TODO el proceso Node.
+        container.kill().catch(() => {})
         reject(new Error(`Ephemeral task timed out after ${timeoutMs}ms`))
       }, timeoutMs)
     })
 
-    await Promise.race([container.wait(), timeoutPromise])
+    try {
+      await Promise.race([container.wait(), timeoutPromise])
+    } catch (err) {
+      // Si es timeout, el kill ya se intentó arriba. Si el wait falló
+      // porque el container murió, el error es esperado.
+      throw err
+    }
 
-    const logs = await container.logs({ stdout: true, stderr: false })
-    const raw = logs.toString('utf-8')
-    return this.cleanGooseOutput(raw)
+    // Leer logs DESPUÉS de que terminó (sin AutoRemove, el container existe)
+    try {
+      const logs = await container.logs({ stdout: true, stderr: false })
+      const raw = logs.toString('utf-8')
+      return this.cleanGooseOutput(raw)
+    } catch (logsErr: any) {
+      // Container pudo haber sido removido por otro proceso
+      console.warn(`[ephemeral] logs read failed: ${logsErr.message}`)
+      return ''
+    }
   }
 
   /**
