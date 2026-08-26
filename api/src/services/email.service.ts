@@ -44,7 +44,7 @@ export async function sendInvitationEmail(params: {
   const html = `
   <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #0f1424; border-radius: 16px; color: #e2e8f0;">
     <div style="text-align: center; margin-bottom: 32px;">
-      <h1 style="font-size: 28px; font-weight: 700; color: #ffffff; margin: 0;">🦞 HQ</h1>
+      <h1 style="font-size: 28px; font-weight: 700; color: #ffffff; margin: 0;">⬡ HQ</h1>
       <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">AI Agent Headquarters</p>
     </div>
 
@@ -100,7 +100,7 @@ Esta invitación expira en 7 días.
   await getTransporter().sendMail({
     from: `"HQ" <${SMTP_FROM}>`,
     to,
-    subject: `🦞 Te invitaron a ${workspaceName} en HQ`,
+    subject: `⬡ Te invitaron a ${workspaceName} en HQ`,
     html,
     text,
   })

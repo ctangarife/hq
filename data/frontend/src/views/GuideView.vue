@@ -59,7 +59,16 @@ const tips = [
 <template>
   <div class="p-6 max-w-4xl mx-auto">
     <header class="text-center mb-12">
-      <span class="text-5xl">🦞</span>
+      <svg width="56" height="56" viewBox="0 0 64 64" class="mx-auto">
+  <defs>
+    <linearGradient id="loginLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#loginLogo)"/>
+  <text x="32" y="42" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui" font-weight="700" letter-spacing="-1">HQ</text>
+</svg>
       <h1 class="text-3xl font-bold text-white mt-4">Cómo usar HQ</h1>
       <p class="text-slate-400 mt-3 text-lg">
         De una idea a un entregable completo en minutos.

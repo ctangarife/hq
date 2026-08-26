@@ -188,7 +188,16 @@ async function resetPassword() {
       <!-- ── Register (con invitación) ── -->
       <div v-else-if="mode === 'register'" class="bg-slate-900 border border-slate-700/60 rounded-2xl p-8">
         <div class="text-center mb-8">
-          <span class="text-4xl">🦞</span>
+          <svg width="56" height="56" viewBox="0 0 64 64" class="mx-auto">
+  <defs>
+    <linearGradient id="loginLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#loginLogo)"/>
+  <text x="32" y="42" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui" font-weight="700" letter-spacing="-1">HQ</text>
+</svg>
           <h1 class="text-2xl font-bold text-white mt-3">Únete a {{ invitationInfo?.workspaceName }}</h1>
           <p class="text-slate-400 text-sm mt-2">{{ invitationInfo?.invitedByName }} te invitó a colaborar en HQ</p>
         </div>
@@ -284,7 +293,16 @@ async function resetPassword() {
       <!-- ── Login ── -->
       <div v-else class="bg-slate-900 border border-slate-700/60 rounded-2xl p-8">
         <div class="text-center mb-8">
-          <span class="text-4xl">🦞</span>
+          <svg width="56" height="56" viewBox="0 0 64 64" class="mx-auto">
+  <defs>
+    <linearGradient id="loginLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#loginLogo)"/>
+  <text x="32" y="42" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui" font-weight="700" letter-spacing="-1">HQ</text>
+</svg>
           <h1 class="text-2xl font-bold text-white mt-3">HQ</h1>
           <p class="text-slate-400 text-sm mt-1">Iniciá sesión en tu workspace</p>
         </div>

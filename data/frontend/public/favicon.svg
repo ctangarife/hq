@@ -1,4 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0f1424"/>
-  <text x="32" y="44" font-size="36" text-anchor="middle" fill="#3b82f6" font-family="system-ui, -apple-system, sans-serif" font-weight="700">HQ</text>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- Hexágono -->
+  <path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#g)"/>
+  <!-- HQ -->
+  <text x="32" y="42" font-size="22" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="700" letter-spacing="-1">HQ</text>
 </svg>

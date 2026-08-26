@@ -71,8 +71,17 @@ async function changePassword() {
     <div class="px-6">
       <div class="flex items-center justify-between h-16">
         <!-- Logo -->
-        <div class="flex items-center gap-2">
-          <span class="text-2xl">🦞</span>
+        <div class="flex items-center gap-2.5">
+          <svg width="26" height="26" viewBox="0 0 64 64" class="shrink-0">
+            <defs>
+              <linearGradient id="navLogo" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3b82f6"/>
+                <stop offset="100%" stop-color="#8b5cf6"/>
+              </linearGradient>
+            </defs>
+            <path d="M32 4 L56 18 L56 46 L32 60 L8 46 L8 18 Z" fill="url(#navLogo)"/>
+            <text x="32" y="42" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui" font-weight="700" letter-spacing="-1">HQ</text>
+          </svg>
           <span class="text-xl font-bold text-white">HQ</span>
         </div>
 
