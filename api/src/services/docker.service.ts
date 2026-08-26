@@ -290,12 +290,19 @@ export class DockerService {
       (l: string) => l.includes('__( O)>') || l.includes('\\____)') || /\bL L\b/.test(l),
     ]
 
-    // Ruido de tool-use (todo_write etc.): llamadas ▸ tool, separadores y
-    // bloques "content:" con sangría. El entregable real nunca los contiene.
+    // Ruido de tool-use (todo_write etc.): llamadas ▸ tool, separadores,
+    // bloques "content:", comandos shell/python, paths de filesystem.
+    // El entregable real nunca contiene estos patrones.
     const toolNoise = [
       (l: string) => /^\s*▸/.test(l),
-      (l: string) => /^\s*─{10,}\s*$/.test(l),
-      (l: string) => /^\s{4,}content:/.test(l),
+      (l: string) => /─{10,}/.test(l),
+      (l: string) => /^\s*content:/.test(l),
+      (l: string) => /command:/.test(l),
+      (l: string) => /bash:|python3|wc -|cat <</.test(l),
+      (l: string) => /\/tmp\/|\/workspace\//.test(l),
+      (l: string) => /^```\s*(bash|python|shell)/.test(l),
+      (l: string) => /^- \[[x ]\]/.test(l), // TODO list checkboxes
+      (l: string) => /^\s*\.\s*$/.test(l), // lone dots (polling)
     ]
 
     const isNoise = (l: string) =>
