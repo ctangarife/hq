@@ -151,6 +151,7 @@ const inviteRole = ref("workspace_member");
 const inviteWsId = ref("");
 const inviting = ref(false);
 const inviteResult = ref<string | null>(null);
+const newWorkspaceName = ref("");
 const selectedWsForInvite = computed(() =>
   workspaces.value.find(w => w._id === inviteWsId.value)
 );
@@ -169,15 +170,34 @@ async function fetchInvitations() {
 }
 
 async function sendInvitation() {
-  if (!inviteEmail.value || !inviteWsId.value) return;
+  if (!inviteEmail.value) return;
   inviting.value = true;
   inviteResult.value = null;
   try {
+    // Si no hay workspace seleccionado pero hay nombre de workspace nuevo → crear + invitar
+    if (!inviteWsId.value && newWorkspaceName.value.trim()) {
+      const slug = newWorkspaceName.value.trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const ws = await workspacesService.create({
+        name: newWorkspaceName.value.trim(),
+        slug,
+        ownerId: "admin",
+        description: `Workspace para ${newWorkspaceName.value.trim()}`,
+      });
+      inviteWsId.value = ws.data._id;
+      await fetchWorkspaces(); // refrescar lista
+      newWorkspaceName.value = "";
+    }
+
+    if (!inviteWsId.value) {
+      inviteResult.value = "❌ Seleccioná un workspace o escribí el nombre para crear uno nuevo";
+      return;
+    }
+
     const res = await authService.createInvitation(inviteEmail.value, inviteWsId.value, inviteRole.value);
     inviteResult.value = `✅ Invitación enviada a ${inviteEmail.value}`;
-    if (res.data.devRegistrationUrl) {
-      inviteResult.value += ` (dev: ${res.data.devRegistrationUrl})`;
-    }
     inviteEmail.value = "";
     await fetchInvitations();
   } catch (err: any) {
@@ -535,15 +555,25 @@ onMounted(() => {
         <h3 class="text-sm font-semibold text-slate-200 mb-4">📨 Invitar a un workspace</h3>
         <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <label class="block text-slate-400 text-xs mb-1">Workspace</label>
-            <select v-model="inviteWsId" @change="fetchInvitations()" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm">
-              <option value="">Seleccionar…</option>
+            <label class="block text-slate-400 text-xs mb-1">
+              Workspace existente
+              <span class="text-slate-600">o creá uno nuevo abajo</span>
+            </label>
+            <select v-model="inviteWsId" @change="fetchInvitations(); newWorkspaceName = ''" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm">
+              <option value="">— Crear workspace nuevo —</option>
               <option v-for="ws in workspaces" :key="ws._id" :value="ws._id">{{ ws.name }}</option>
             </select>
+            <input
+              v-if="!inviteWsId"
+              v-model="newWorkspaceName"
+              type="text"
+              placeholder="Nombre del nuevo workspace (ej: La Estantería)"
+              class="w-full mt-2 px-3 py-2 bg-slate-900 border border-purple-600/50 rounded-lg text-white text-sm"
+            />
           </div>
           <div>
             <label class="block text-slate-400 text-xs mb-1">Email</label>
-            <input v-model="inviteEmail" type="email" placeholder="persona@email.com" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm" :disabled="!inviteWsId" />
+            <input v-model="inviteEmail" type="email" placeholder="persona@email.com" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm" />
           </div>
           <div>
             <label class="block text-slate-400 text-xs mb-1">Rol</label>
@@ -555,7 +585,7 @@ onMounted(() => {
             </select>
           </div>
           <div class="flex items-end">
-            <button @click="sendInvitation()" :disabled="inviting || !inviteWsId || !inviteEmail" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50">
+            <button @click="sendInvitation()" :disabled="inviting || !inviteEmail || (!inviteWsId && !newWorkspaceName.trim())" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50">
               {{ inviting ? 'Enviando…' : '📨 Invitar' }}
             </button>
           </div>
