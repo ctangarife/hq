@@ -40,8 +40,14 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
   } catch (e) { next(e) }
 })
 
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
+    // Solo super_admin puede crear workspaces — los invitados se unen a
+    // uno existente vía invitación, no crean los suyos.
+    if (req.user && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Solo el administrador puede crear workspaces' })
+    }
+
     const { name, slug, description, ownerId, avatarStyle } = req.body
     if (!name || !slug || !ownerId) {
       return res.status(400).json({ error: 'name, slug, ownerId are required' })
