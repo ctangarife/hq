@@ -208,6 +208,18 @@ Ejecuta esta tarea y reporta SOLO el resultado final en español.`
   }
 
   /**
+   * Worker que procesa tareas de una cola compartida, una a la vez.
+   * Múltiples workers = concurrencia limitada (pool pattern).
+   */
+  private async runTaskQueue(queue: ITask[]): Promise<void> {
+    while (queue.length > 0) {
+      const task = queue.shift()
+      if (!task) break
+      await this.executeSpecialistTask(task)
+    }
+  }
+
+  /**
    * Dispatchar todas las tareas de especialista listas para ejecutar de una misión.
    *
    * "Lista" = status pending + tipo especialista + dependencias completadas.
@@ -246,11 +258,21 @@ Ejecuta esta tarea y reporta SOLO el resultado final en español.`
       return
     }
 
-    // Ejecutar en paralelo (cada una spawnea su propio container Goose)
-    console.log(`[dispatcher] executing ${ready.length} specialist tasks in parallel`)
-    await Promise.allSettled(
-      ready.map(task => this.executeSpecialistTask(task)),
-    )
+    // Ejecutar con LÍMITE de concurrencia — cada efímero consume 200-500MB
+    // RAM y CPU. En paralelo total (14 containers), la VPS (2vCPU/8GB) se
+    // queda sin recursos y los containers mueren de hambre → timeout.
+    // Máx 2 simultáneos: suficiente para throughput sin matar la VPS.
+    const MAX_CONCURRENT = parseInt(process.env.EPHEMERAL_MAX_CONCURRENT || '2', 10)
+    console.log(`[dispatcher] executing ${ready.length} tasks (max ${MAX_CONCURRENT} concurrent)`)
+
+    const queue = [...ready]
+    const workers: Promise<void>[] = []
+
+    for (let i = 0; i < Math.min(MAX_CONCURRENT, queue.length); i++) {
+      workers.push(this.runTaskQueue(queue))
+    }
+
+    await Promise.allSettled(workers)
 
     // Tras completar, verificar si la misión debe cerrarse (y limpiar a los
     // especialistas — ciclo de vida efímero). Import dinámico para evitar
