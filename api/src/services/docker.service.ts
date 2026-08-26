@@ -243,34 +243,37 @@ export class DockerService {
    * dejando solo la respuesta del modelo.
    */
   private async captureContainerOutput(container: any, timeoutMs: number): Promise<string> {
-    // Esperar a que el container TERMINE, luego leer logs en un solo golpe.
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        // .catch() — el container puede ya estar muerto/removido.
-        // Sin esto, la rejection no manejada crashea TODO el proceso Node.
-        container.kill().catch(() => {})
-        reject(new Error(`Ephemeral task timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-    })
+    // POLLING en vez de container.wait() — wait() se cuelga desde dentro de
+    // un container que usa el Docker socket del host (Docker-in-Docker).
+    // Polling cada 2s es confiable y no bloquea el event loop.
+    const startTime = Date.now()
 
-    try {
-      await Promise.race([container.wait(), timeoutPromise])
-    } catch (err) {
-      // Si es timeout, el kill ya se intentó arriba. Si el wait falló
-      // porque el container murió, el error es esperado.
-      throw err
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const info = await container.inspect()
+        if (info.State.Status === 'exited' || info.State.Status === 'dead') {
+          // El container terminó — leer logs
+          try {
+            const logs = await container.logs({ stdout: true, stderr: false })
+            return this.cleanGooseOutput(logs.toString('utf-8'))
+          } catch (logsErr: any) {
+            console.warn(`[ephemeral] logs read failed: ${logsErr.message}`)
+            return ''
+          }
+        }
+      } catch (inspectErr: any) {
+        // Container pudo haber sido removido — intentar leer logs una vez
+        console.warn(`[ephemeral] inspect failed: ${inspectErr.message}`)
+        return ''
+      }
+
+      // Esperar 2s antes del siguiente poll
+      await new Promise(resolve => setTimeout(resolve, 2000))
     }
 
-    // Leer logs DESPUÉS de que terminó (sin AutoRemove, el container existe)
-    try {
-      const logs = await container.logs({ stdout: true, stderr: false })
-      const raw = logs.toString('utf-8')
-      return this.cleanGooseOutput(raw)
-    } catch (logsErr: any) {
-      // Container pudo haber sido removido por otro proceso
-      console.warn(`[ephemeral] logs read failed: ${logsErr.message}`)
-      return ''
-    }
+    // Timeout — intentar kill sin crashear si ya murió
+    container.kill().catch(() => {})
+    throw new Error(`Ephemeral task timed out after ${timeoutMs}ms`)
   }
 
   /**
