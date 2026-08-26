@@ -1,6 +1,7 @@
 # Entorno
 .env
 .env.local
+.env.*.local
 
 # Dependencias
 node_modules/
@@ -29,6 +30,11 @@ data/mongodb
 *.swo
 *~
 
+# Agent artifacts (ZCode, Claude, etc.)
+.zcode/
+.claude/
+assis/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -38,5 +44,3 @@ logs/
 *.log
 
 **.bk
-
-.claude
