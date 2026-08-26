@@ -10,6 +10,16 @@ const routes: RouteRecordRaw[] = [
     component: DashboardView
   },
   {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/LoginView.vue')
+  },
+  {
+    path: '/accept-invitation',
+    name: 'accept-invitation',
+    component: () => import('@/views/LoginView.vue')
+  },
+  {
     path: '/missions',
     name: 'missions',
     component: () => import('@/views/MissionsView.vue')

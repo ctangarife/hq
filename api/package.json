@@ -25,7 +25,9 @@
     "mkdirp": "^3.0.1",
     "pdfkit": "^0.15.0",
     "marked": "^15.0.4",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "bcryptjs": "^3.0.2",
+    "nodemailer": "^9.0.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

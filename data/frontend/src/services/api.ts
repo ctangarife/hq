@@ -16,14 +16,14 @@ const api = axios.create({
 const UI_SECRET = import.meta.env.VITE_UI_SECRET || ''
 
 api.interceptors.request.use((config) => {
-  // x-ui-secret: puerta compartida del deployment (siempre que esté configurado)
-  if (UI_SECRET) {
-    config.headers['x-ui-secret'] = UI_SECRET
-  }
-  // Authorization: para futuro sistema de auth por-usuario (opcional)
+  // JWT de usuario autenticado (login/invitación) — prioridad sobre UI_SECRET
   const token = localStorage.getItem('hq_token')
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
+  }
+  // UI_SECRET como fallback (acceso admin / usuarios no autenticados)
+  if (UI_SECRET && !token) {
+    config.headers['x-ui-secret'] = UI_SECRET
   }
   return config
 })

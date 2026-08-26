@@ -19,6 +19,7 @@ import missionTemplatesRoutes from './routes/mission-templates.routes.js'
 import llmConfigRoutes from './routes/llm-config.js'
 import workspaceRoutes from './routes/workspaces.js'
 import promptRoutes from './routes/prompts.js'
+import authRoutes from './routes/auth.js'
 
 // Credentials management - Eliminado (no necesitamos)
 // import configRoutes from './routes/config.js'
@@ -43,6 +44,9 @@ app.use(express.urlencoded({ extended: true }))
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'hq-api', timestamp: new Date().toISOString() })
 })
+
+// Auth routes (login, registro con invitación) — ANTES del auth middleware
+app.use('/api/auth', authRoutes)
 
 // Auth middleware for API routes
 app.use('/api', authMiddleware)
