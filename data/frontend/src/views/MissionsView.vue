@@ -10,7 +10,7 @@ const consolidatingId = ref<string | null>(null)
 <script setup lang="ts">
 // ref viene del bloque script superior (ámbito compartido del módulo)
 import { onMounted } from 'vue'
-import { missionsService, tasksService, attachmentsService, resourcesService, templatesService } from '@/services/api'
+import { missionsService, tasksService, attachmentsService, resourcesService, templatesService, default as api } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
 import TaskDependencyGraph from '@/components/TaskDependencyGraph.vue'
@@ -540,6 +540,21 @@ const consolidateMission = async (missionId: string) => {
 }
 
 // Restart mission
+// Send PDF by email — al propietario del workspace
+const sendingPdfId = ref<string | null>(null)
+
+const sendPdfByEmail = async (missionId: string) => {
+  sendingPdfId.value = missionId
+  try {
+    const { data } = await api.post(`/resources/mission/${missionId}/send-pdf`, {})
+    alert(`✅ ${data.message}`)
+  } catch (err: any) {
+    alert(`❌ ${err.response?.data?.error || err.message}`)
+  } finally {
+    sendingPdfId.value = null
+  }
+}
+
 const restartMission = async (missionId: string) => {
   if (!confirm('¿Reiniciar esta misión? Esto la volverá al estado borrador y eliminará todas las tareas y asignaciones.')) return
   try {
@@ -889,6 +904,22 @@ onMounted(() => {
               <span v-if="consolidatingId === mission._id" class="inline-block w-3 h-3 border-2 border-yellow-300 border-t-transparent rounded-full animate-spin"></span>
               <span v-else>📄</span>
               {{ consolidatingId === mission._id ? 'Puliendo…' : 'Consolidar' }}
+            </button>
+
+            <!-- Send PDF by Email Button -->
+            <button
+              v-if="mission.status === 'completed'"
+              @click="sendPdfByEmail(mission._id)"
+              :disabled="sendingPdfId === mission._id"
+              class="px-3 py-1 rounded text-sm transition flex items-center gap-1.5"
+              :class="sendingPdfId === mission._id
+                ? 'bg-teal-800 text-teal-200 cursor-wait'
+                : 'bg-teal-600 hover:bg-teal-700 text-white'"
+              title="Enviar PDF por email al propietario del workspace"
+            >
+              <span v-if="sendingPdfId === mission._id" class="inline-block w-3 h-3 border-2 border-teal-300 border-t-transparent rounded-full animate-spin"></span>
+              <span v-else>📧</span>
+              {{ sendingPdfId === mission._id ? 'Enviando…' : 'Enviar' }}
             </button>
 
             <!-- Restart Button -->

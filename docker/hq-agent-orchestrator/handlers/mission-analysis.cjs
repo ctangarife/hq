@@ -40,12 +40,14 @@ const PLAN_FALLBACK = `Formato del plan JSON (descripciones de UNA línea):
   "complexity": "low|medium|high|critical",
   "summary": "una línea",
   "tasks": [
-    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|writer|analyst"}
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|image_prompt|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|designer|writer|analyst"}
   ],
   "agents": [
-    {"id": "agent-1", "name": "...", "role": "researcher|developer|writer|analyst", "capabilities": ["una"]}
+    {"id": "agent-1", "name": "...", "role": "researcher|developer|designer|writer|analyst", "capabilities": ["una"]}
   ]
-}`;
+}
+
+REGLA IMPORTANTE: si la misión produce contenido visual (posts de Instagram, imágenes, stories, carruseles), SIEMPRE incluye una tarea type "image_prompt" con assignedAgentRole "designer" para generar los prompts de imagen. También incluye un agente con role "designer" en el array agents.`;
 
 const RESUME_FALLBACK = `Eres un agente Squad Lead. Tu trabajo es analizar misiones y crear planes de ejecución.
 

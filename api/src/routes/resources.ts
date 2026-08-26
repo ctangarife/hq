@@ -3,6 +3,9 @@ import multer from 'multer'
 import path from 'path'
 import { fileManagementService } from '../services/file-management.service.js'
 import { browserService } from '../services/browser.service.js'
+import Mission from '../models/Mission.js'
+import Workspace from '../models/Workspace.js'
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
 
 const router = express.Router()
 
@@ -181,6 +184,93 @@ router.get('/mission/:missionId/download/:filename', async (req, res) => {
  * GET /api/resources/mission/:missionId/outputs/download
  * Descargar entregable final (PDF o Markdown)
  */
+/**
+ * POST /api/resources/mission/:missionId/send-pdf
+ * Enviar el PDF consolidado por email al propietario del workspace
+ * o a destinatarios seleccionados.
+ *
+ * Body: { to?: string[] } — si no se especifica, envía al owner del workspace.
+ */
+router.post('/mission/:missionId/send-pdf', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { missionId } = req.params
+    const { to } = req.body
+
+    // Cargar misión para el asunto
+    const mission = await Mission.findById(missionId).select('title description workspaceId')
+    if (!mission) {
+      return res.status(404).json({ error: 'Mission not found' })
+    }
+
+    // Resolver destinatarios
+    let recipients: string[] = []
+    if (to && Array.isArray(to) && to.length > 0) {
+      recipients = to
+    } else {
+      // Enviar al owner del workspace
+      const workspace = await Workspace.findById(mission.workspaceId).select('members')
+      if (workspace) {
+        const owners = workspace.members.filter(m => m.role === 'owner' || m.role === 'manager')
+        recipients = owners.map(m => m.email).filter(Boolean)
+      }
+    }
+
+    if (recipients.length === 0) {
+      return res.status(400).json({ error: 'No recipients found. Specify "to" or add an owner to the workspace.' })
+    }
+
+    // Buscar el PDF consolidado
+    const metadata = await fileManagementService.getMissionMetadata(missionId)
+    if (!metadata) {
+      return res.status(404).json({ error: 'No consolidated output found. Consolidate first.' })
+    }
+
+    const pdfFile = metadata.outputFiles.find(f => f.originalName.endsWith('.pdf'))
+    if (!pdfFile) {
+      return res.status(404).json({ error: 'PDF not found. Consolidate with PDF format first.' })
+    }
+
+    const filename = path.basename(pdfFile.path)
+    const pdfBuffer = await fileManagementService.getOutputFile(missionId, filename)
+
+    // Enviar email
+    const { sendEmail } = await import('../services/email.service.js')
+    const missionTitle = mission.title || 'Entregable'
+
+    for (const email of recipients) {
+      await sendEmail({
+        to: email,
+        subject: `📋 ${missionTitle} — Tu entregable está listo`,
+        html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #0f1424; border-radius: 16px; color: #e2e8f0;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <div style="width:56px;height:56px;margin:0 auto 16px;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;">HQ</div>
+            <h1 style="font-size: 22px; color: #ffffff; margin: 0;">Tu entregable está listo</h1>
+          </div>
+          <div style="background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <p style="font-size: 15px; line-height: 1.6; color: #cbd5e1; margin: 0;">
+              La misión <strong style="color:#fff">${missionTitle}</strong> ha completado su ejecución.
+              El PDF adjunto contiene todo el contenido generado: posts, guiones visuales,
+              calendario de publicación y prompts de imagen.
+            </p>
+          </div>
+          <p style="font-size: 13px; color: #64748b; text-align: center;">
+            Enviado automáticamente por HQ · AI Agent Headquarters
+          </p>
+        </div>`,
+        text: `Tu entregable de "${missionTitle}" está listo. Ver PDF adjunto.`,
+      })
+    }
+
+    res.json({
+      message: `PDF enviado a ${recipients.length} destinatario(s)`,
+      recipients,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/mission/:missionId/outputs/download', async (req, res) => {
   try {
     const { missionId } = req.params
