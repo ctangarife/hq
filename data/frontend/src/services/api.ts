@@ -9,24 +9,31 @@ const api = axios.create({
   }
 })
 
-// UI_SECRET compartido del deployment (inyectado por Vite en build-time).
-// Patrón HQ: la app entera comparte este secret como puerta de entrada,
-// NO es un login por-usuario. Si un hq_token está en localStorage (futuro
-// sistema de auth real), se envía además como Authorization.
-const UI_SECRET = import.meta.env.VITE_UI_SECRET || ''
-
+// JWT de usuario autenticado — ÚNICA forma de auth del frontend.
+// El UI_SECRET ya NO se envía desde el cliente (estaba expuesto en el
+// bundle JavaScript — cualquiera con F12 lo veía). Para acceder, login.
 api.interceptors.request.use((config) => {
-  // JWT de usuario autenticado (login/invitación) — prioridad sobre UI_SECRET
   const token = localStorage.getItem('hq_token')
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
   }
-  // UI_SECRET como fallback (acceso admin / usuarios no autenticados)
-  if (UI_SECRET && !token) {
-    config.headers['x-ui-secret'] = UI_SECRET
-  }
   return config
 })
+
+// Si la API responde 401, limpiar token y redirigir a login
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('hq_token')
+      localStorage.removeItem('hq_user')
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 // Services
 export const missionsService = {

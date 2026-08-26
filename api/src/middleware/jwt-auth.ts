@@ -2,25 +2,24 @@ import { Request, Response, NextFunction } from 'express'
 import { authService, AuthTokenPayload } from '../services/auth.service.js'
 
 /**
- * JWT Auth Middleware — Autenticación REAL por usuario.
+ * JWT Auth Middleware — Autenticación REAL por usuario. JWT ONLY.
  *
- * Acepta (en orden de prioridad):
- *   1. Authorization: Bearer <JWT> — usuario autenticado (req.user se setea)
- *   2. x-ui-secret: <UI_SECRET> — admin propio / transición (req.admin = true)
+ * El UI_SECRET ya NO da acceso a los datos de la API — estaba expuesto en
+ * el bundle JavaScript del frontend (F12 → Sources) y anulaba el aislamiento
+ * multi-tenant. Ahora TODA la API exige JWT de usuario autenticado.
  *
- * El middleware NO rechaza si no hay JWT pero sí hay UI_SECRET — permite
- * coexistencia durante la migración. Cuando todo use JWT, se puede endurecer.
+ * El UI_SECRET solo se usa internamente (agents containers → API polling),
+ * NUNCA desde el navegador para ver datos.
  */
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload
-  isAdmin?: boolean
   workspaceId?: string
 }
 
 export function jwtAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  // 1. Intentar JWT
   const authHeader = req.headers.authorization
+
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7)
     try {
@@ -29,29 +28,19 @@ export function jwtAuthMiddleware(req: AuthenticatedRequest, res: Response, next
       req.workspaceId = payload.workspaceId
       return next()
     } catch {
-      // Token inválido — no rechazar aún, probar UI_SECRET
+      return res.status(401).json({ error: 'Token inválido o expirado. Iniciá sesión de nuevo.' })
     }
   }
 
-  // 2. UI_SECRET (compatibilidad / admin)
-  const uiSecret = req.headers['x-ui-secret'] as string
-  const validSecret = process.env.UI_SECRET || ''
-
-  if (uiSecret && uiSecret === validSecret) {
-    req.isAdmin = true
-    return next()
-  }
-
-  // 3. Sin credenciales válidas
+  // Sin JWT — rechazar
   return res.status(401).json({
-    error: 'Unauthorized',
-    hint: 'Usá Authorization: Bearer <token> (login) o x-ui-secret (admin)',
+    error: 'Autenticación requerida',
+    hint: 'Iniciá sesión en /login para obtener un token',
   })
 }
 
 /**
- * Middleware que EXIGE usuario autenticado (no acepta UI_SECRET).
- * Para rutas que son exclusivamente de usuario (perfil, etc.).
+ * Middleware que EXIGE usuario autenticado.
  */
 export function requireUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
@@ -71,7 +60,7 @@ export function requireWorkspace(req: AuthenticatedRequest, res: Response, next:
 }
 
 /**
- * Middleware que EXIGE rol mínimo (owner o manager).
+ * Middleware que EXIGE rol mínimo.
  */
 export function requireRole(...roles: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -83,4 +72,32 @@ export function requireRole(...roles: string[]) {
     }
     next()
   }
+}
+
+/**
+ * Middleware para AGENTES (containers internos): acepta HQ_API_TOKEN.
+ * Esto es lo que usa el polling skill del orchestrator para hablar con
+ * la API — NO es para navegadores.
+ */
+export function agentAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7)
+    // 1. Es un JWT de usuario?
+    try {
+      const payload = authService.verifyToken(token)
+      req.user = payload
+      req.workspaceId = payload.workspaceId
+      return next()
+    } catch {
+      // No es JWT válido — probar HQ_API_TOKEN
+    }
+    // 2. Es el HQ_API_TOKEN interno (para agents)?
+    if (token === (process.env.HQ_API_TOKEN || 'hq-agent-token')) {
+      return next()
+    }
+  }
+
+  return res.status(401).json({ error: 'Autenticación requerida' })
 }

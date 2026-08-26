@@ -126,8 +126,8 @@ services:
     environment:
       # API URL (path relativo, via Nginx)
       VITE_API_URL: ${NEXT_PUBLIC_API_URL}
-      # UI_SECRET embebido en el bundle (patrón HQ: puerta compartida, no login)
-      VITE_UI_SECRET: ${UI_SECRET}
+      # Ya NO exponemos VITE_UI_SECRET — estaba visible en el JS bundle
+      # (F12 → Sources) y anulaba el multi-tenant. Auth es JWT via /login.
     command: sh -c "npm install && npm ci && NODE_ENV=production npm run build --max-old-space-size=4096"
     networks:
       - hq-network

@@ -56,4 +56,20 @@ const router = createRouter({
   routes
 })
 
+// Route guard: exigir JWT para todas las rutas excepto login/invitation
+router.beforeEach((to, _from, next) => {
+  const publicRoutes = ['/login', '/accept-invitation']
+  const isPublic = publicRoutes.some(r => to.path.startsWith(r))
+  const token = localStorage.getItem('hq_token')
+
+  if (!token && !isPublic) {
+    next('/login')
+  } else if (token && isPublic && !to.path.includes('accept-invitation')) {
+    // Ya logueado, no mostrar login de nuevo (excepto si es invitación)
+    next('/')
+  } else {
+    next()
+  }
+})
+
 export default router
