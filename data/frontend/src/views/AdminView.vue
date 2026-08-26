@@ -196,7 +196,7 @@ async function sendInvitation() {
       return;
     }
 
-    const res = await authService.createInvitation(inviteEmail.value, inviteWsId.value, inviteRole.value);
+    await authService.createInvitation(inviteEmail.value, inviteWsId.value, inviteRole.value);
     inviteResult.value = `✅ Invitación enviada a ${inviteEmail.value}`;
     inviteEmail.value = "";
     await fetchInvitations();
