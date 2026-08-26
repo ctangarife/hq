@@ -192,19 +192,23 @@ export class DockerService {
 
     console.log(`[ephemeral] spawning Goose container for task (${prompt.length} chars)`)
 
-    // 3. Crear container efímero con auto-remove
+    // 3. Crear container efímero — el prompt se pasa como ARGUMENTO (-t),
+    //    NO por stdin. El attach de stdin vía Docker socket desde dentro de
+    //    un container (DinD) NO entrega los datos — Goose cuelga esperando.
     const container = await docker.createContainer({
       Image: image,
       Env: env,
-      AttachStdin: true,
+      Entrypoint: [
+        'goose', 'run',
+        '--no-session',
+        '--output-format', 'text',
+        '-t', prompt,
+      ],
       AttachStdout: true,
       AttachStderr: true,
-      OpenStdin: true,
+      OpenStdin: false,
       Tty: false,
       HostConfig: {
-        // Sin AutoRemove: necesitamos leer logs DESPUÉS de que el container
-        // termine. Con AutoRemove, el container ya no existe cuando intentamos
-        // leer → 404. El cleanup es manual en el finally.
         AutoRemove: false,
         NetworkMode: network,
       },
@@ -215,15 +219,9 @@ export class DockerService {
     })
 
     try {
-      // Secuencia start→attach→write. El stream puede desalinearse (bytes
-      // corruptos como prefijo de cada línea) — cleanGooseOutput lo sanitiza.
       await container.start()
 
-      const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true })
-      stream.write(prompt)
-      stream.end()
-
-      // Capturar stdout
+      // Capturar stdout (polling — container.wait() se cuelga en DinD)
       const output = await this.captureContainerOutput(container, options.timeoutMs ?? 300000)
       console.log(`[ephemeral] task completed (${output.length} chars output)`)
       // Cleanup manual (sin AutoRemove)
