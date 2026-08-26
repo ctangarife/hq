@@ -192,7 +192,7 @@ async function sendInvitation() {
     }
 
     if (!inviteWsId.value) {
-      inviteResult.value = "❌ Seleccioná un workspace o escribí el nombre para crear uno nuevo";
+      inviteResult.value = "❌ Seleccione un workspace o escriba el nombre para crear uno nuevo";
       return;
     }
 
@@ -581,7 +581,7 @@ onMounted(() => {
           <div>
             <label class="block text-slate-400 text-xs mb-1">
               Workspace existente
-              <span class="text-slate-600">o creá uno nuevo abajo</span>
+              <span class="text-slate-600">o cree uno nuevo abajo</span>
             </label>
             <select v-model="inviteWsId" @change="fetchInvitations(); newWorkspaceName = ''" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm">
               <option value="">— Crear workspace nuevo —</option>
@@ -623,7 +623,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-if="!inviteWsId" class="text-center py-12 text-slate-500">Seleccioná un workspace</div>
+      <div v-if="!inviteWsId" class="text-center py-12 text-slate-500">Seleccione un workspace</div>
       <div v-else-if="invitationsLoading" class="text-center py-8 text-slate-400">Cargando…</div>
       <div v-else-if="invitations.length === 0" class="text-center py-8 text-slate-500">Sin invitaciones todavía</div>
       <div v-else class="space-y-2">

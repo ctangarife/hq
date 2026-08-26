@@ -6,20 +6,20 @@ const router = useRouter()
 const steps = [
   {
     icon: '✉️',
-    title: 'Recibís una invitación',
-    description: 'Te llega un email de HQ con un botón para aceptar la invitación al workspace de tu equipo o negocio.',
-    detail: 'El email viene de noreply@ctangarife.com con asunto "Te invitaron a..."',
+    title: 'Recibe una invitación',
+    description: 'Le llega un email de HQ con un botón para aceptar la invitación al workspace de su equipo o negocio.',
+    detail: 'El email viene de noreply@ctangarife.com con asunto "Le invitaron a..."',
   },
   {
     icon: '🔐',
-    title: 'Creás tu cuenta',
-    description: 'Definís tu nombre y contraseña (mínimo 8 caracteres). Tu email ya viene fijado por la invitación.',
-    detail: 'No necesitás instalar nada — todo funciona en el navegador.',
+    title: 'Cree su cuenta',
+    description: 'Define su nombre y contraseña (mínimo 8 caracteres). Tu email ya viene fijado por la invitación.',
+    detail: 'No necesita instalar nada — todo funciona en el navegador.',
   },
   {
     icon: '✨',
-    title: 'Creás tu primera misión',
-    description: 'En "Misiones" → "Nueva Misión" escribís tu idea en una línea y hacés click en "✨ Enriquecer". La IA la convierte en un brief profesional completo.',
+    title: 'Cree su primera misión',
+    description: 'En "Misiones" → "Nueva Misión" escribas su idea en una línea y hace click en "✨ Enriquecer". La IA la convierte en un brief profesional completo.',
     detail: 'Ejemplo: "3 posts para Instagram de mi cafetería" → brief con audiencia, tono, entregables y calendario.',
     link: '/missions',
     linkLabel: 'Ir a Misiones',
@@ -28,20 +28,20 @@ const steps = [
     icon: '🤖',
     title: 'Los agentes trabajan',
     description: 'HQ asigna automáticamente especialistas: un Writer para el contenido, un Researcher para investigar, un Designer para los prompts de imagen. Cada uno usa el modelo de IA que mejor le corresponde.',
-    detail: 'Puedes verlos trabajar en tiempo real en la vista "Actividad" — un mapa isométrico donde los agentes se mueven mientras ejecutan tareas.',
+    detail: 'Puede verlos trabajar en tiempo real en la vista "Actividad" — un mapa isométrico donde los agentes se mueven mientras ejecutan tareas.',
     link: '/activity',
     linkLabel: 'Ver Actividad',
   },
   {
     icon: '📄',
-    title: 'Descargás tu entregable',
-    description: 'Cuando la misión termina, hacés click en "Consolidar" y HQ genera un PDF pulido con todo el contenido: posts listos para publicar, guiones visuales, calendario editorial.',
-    detail: 'El PDF incluye instrucciones de publicación y marcadores [DATO: ...] donde necesitás completar información específica de tu negocio.',
+    title: 'Descargue su entregable',
+    description: 'Cuando la misión termina, hace click en "Consolidar" y HQ genera un PDF pulido con todo el contenido: posts listos para publicar, guiones visuales, calendario editorial.',
+    detail: 'El PDF incluye instrucciones de publicación y marcadores [DATO: ...] donde necesita completar información específica de su negocio.',
   },
   {
     icon: '👥',
-    title: 'Invitás a tu equipo',
-    description: 'Si sos propietario o admin del workspace, podés invitar a más personas desde "Admin" → "Miembros". Cada persona recibe un email y entra con su propia cuenta.',
+    title: 'Invite a su equipo',
+    description: 'Si sos propietario o admin del workspace, puede invitar a más personas desde "Admin" → "Miembros". Cada persona recibe un email y entra con su propia cuenta.',
     detail: 'Roles disponibles: Propietario, Admin, Miembro y Lector.',
     link: '/admin',
     linkLabel: 'Ir a Admin',
@@ -50,9 +50,9 @@ const steps = [
 
 const tips = [
   { icon: '💡', text: 'Mientras más específico sea tu brief, mejor será el resultado. Nombres de productos, precios y barrios reales hacen la diferencia.' },
-  { icon: '🔑', text: 'Podés cambiar tu contraseña cuando quieras con el botón 🔑 en la barra superior.' },
+  { icon: '🔑', text: 'Puede cambiar su contraseña cuando quieras con el botón 🔑 en la barra superior.' },
   { icon: '🎨', text: 'Los prompts de imagen están listos para pegar en herramientas como Gemini, Flux o Midjourney.' },
-  { icon: '⏱️', text: 'Una misión típica tarda entre 2 y 5 minutos. Podés navegar libremente mientras trabaja.' },
+  { icon: '⏱️', text: 'Una misión típica tarda entre 2 y 5 minutos. Puede navegar libremente mientras trabaja.' },
 ]
 </script>
 

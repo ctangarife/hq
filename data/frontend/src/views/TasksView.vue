@@ -959,7 +959,7 @@ onUnmounted(() => {
               <h4 class="text-orange-400 text-sm font-medium">Requiere auditoría</h4>
             </div>
             <p class="text-gray-300 text-sm mb-3">
-              Esta tarea ha alcanzado el máximo de reintentos. Puedes:
+              Esta tarea ha alcanzado el máximo de reintentos. Puede:
             </p>
             <div class="flex gap-2">
               <button

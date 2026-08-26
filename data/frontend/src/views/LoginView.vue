@@ -217,7 +217,7 @@ async function resetPassword() {
           </div>
           <div>
             <label class="block text-slate-400 text-sm mb-1.5">Confirmar contraseña *</label>
-            <input v-model="registerPasswordConfirm" type="password" required minlength="8" class="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white" placeholder="Repetí tu contraseña" />
+            <input v-model="registerPasswordConfirm" type="password" required minlength="8" class="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-white" placeholder="Repetí su contraseña" />
           </div>
           <div v-if="registerError" class="p-3 bg-red-900/30 border border-red-700/50 rounded-xl">
             <p class="text-red-400 text-sm">{{ registerError }}</p>
@@ -261,7 +261,7 @@ async function resetPassword() {
         <div class="text-center mb-8">
           <span class="text-4xl">🔐</span>
           <h1 class="text-2xl font-bold text-white mt-3">Nueva contraseña</h1>
-          <p class="text-slate-400 text-sm mt-2">Creá tu nueva contraseña</p>
+          <p class="text-slate-400 text-sm mt-2">Cree su nueva contraseña</p>
         </div>
 
         <div v-if="!resetDone" class="space-y-4">
@@ -304,7 +304,7 @@ async function resetPassword() {
   <text x="32" y="42" font-size="22" text-anchor="middle" fill="#fff" font-family="system-ui" font-weight="700" letter-spacing="-1">HQ</text>
 </svg>
           <h1 class="text-2xl font-bold text-white mt-3">HQ</h1>
-          <p class="text-slate-400 text-sm mt-1">Iniciá sesión en tu workspace</p>
+          <p class="text-slate-400 text-sm mt-1">Inicie sesión en su workspace</p>
         </div>
 
         <form @submit.prevent="login()" class="space-y-4">
@@ -326,7 +326,7 @@ async function resetPassword() {
 
         <div class="mt-4 text-center">
           <button @click="mode = 'forgot'" class="text-slate-500 hover:text-blue-400 text-xs transition">
-            ¿Olvidaste tu contraseña?
+            ¿Olvidaste su contraseña?
           </button>
         </div>
       </div>

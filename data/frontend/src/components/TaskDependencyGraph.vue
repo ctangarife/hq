@@ -42,7 +42,7 @@ const stats = ref<any>(null)
 const executableTasks = ref<any[]>([])
 const blockedTasks = ref<any[]>([])
 
-// Canvas dimensions
+// Canva dimensions
 const canvasWidth = ref(800)
 const canvasHeight = ref(500)
 const nodeRadius = 25
@@ -354,7 +354,7 @@ watch(() => props.missionId, () => {
         </div>
       </div>
 
-      <!-- Canvas -->
+      <!-- Canva -->
       <div class="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
         <canvas
           id="dag-canvas"

@@ -81,7 +81,7 @@ onMounted(async () => {
           <div>
             <h2 class="text-xl font-bold text-white">👋 ¡Bienvenido a HQ!</h2>
             <p class="text-slate-300 mt-2 text-sm">
-              Agentes IA que crean contenido para tu negocio: posts, reportes, investigación y más.
+              Agentes IA que crean contenido para su negocio: posts, reportes, investigación y más.
             </p>
             <div class="flex gap-3 mt-4">
               <RouterLink to="/missions" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm">

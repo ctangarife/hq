@@ -388,7 +388,7 @@ const rejectPlan = () => {
   showPlanPreviewModal.value = false
   squadLeadPlan.value = null
   createdMissionId.value = null
-  alert('Misión creada en estado borrador. Puedes orquestarla manualmente más tarde o editarla.')
+  alert('Misión creada en estado borrador. Puede orquestarla manualmente más tarde o editarla.')
 }
 
 // Orchestrate mission
@@ -465,7 +465,7 @@ const enriching = ref(false)
 
 const enrichMission = async () => {
   if (!enrichSeed.value.trim() || enrichSeed.value.trim().length < 3) {
-    alert('Escribí tu idea primero (mínimo 3 caracteres)')
+    alert('Escriba su idea primero (mínimo 3 caracteres)')
     return
   }
   enriching.value = true
@@ -770,7 +770,7 @@ onMounted(() => {
     <!-- Empty State -->
     <div v-else-if="missions.length === 0" class="text-center py-16">
       <p class="text-gray-500 text-lg">No hay misiones creadas</p>
-      <p class="text-gray-600 mt-2">Crea tu primera misión para comenzar</p>
+      <p class="text-gray-600 mt-2">Crea su primera misión para comenzar</p>
     </div>
 
     <!-- Missions List -->
@@ -948,7 +948,7 @@ onMounted(() => {
           <!-- ✨ Enriquecedor: idea en una línea → brief completo -->
           <div class="mb-4 p-3 rounded-lg bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-700/40">
             <label class="block text-purple-200 text-sm font-medium mb-2">
-              ✨ Describí tu idea en una línea
+              ✨ Describa su idea en una línea
               <span class="text-purple-400/70 font-normal text-xs">— la IA la convierte en brief completo</span>
             </label>
             <div class="flex gap-2">
@@ -1039,7 +1039,7 @@ onMounted(() => {
               <div>
                 <label class="block text-gray-400 text-xs mb-1">
                   Audiencia objetivo
-                  <span class="text-gray-600 font-normal"> - ¿Quién consumirá el resultado?</span>
+                  <span class="text-gray-600 font-normal"> - ¿Quién consumire el resultado?</span>
                 </label>
                 <input
                   v-model="formData.audience"
