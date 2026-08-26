@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { missionsService, agentsService, tasksService, activityService } from '@/services/api'
 
 // Dashboard data
@@ -74,6 +75,27 @@ onMounted(async () => {
 
     <!-- Dashboard Content -->
     <template v-else>
+      <!-- Welcome card for new users (no missions) -->
+      <div v-if="stats.activeMissions === 0 && stats.completedTasks === 0" class="mb-8 bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-700/40 rounded-2xl p-6">
+        <div class="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white">👋 ¡Bienvenido a HQ!</h2>
+            <p class="text-slate-300 mt-2 text-sm">
+              Agentes IA que crean contenido para tu negocio: posts, reportes, investigación y más.
+            </p>
+            <div class="flex gap-3 mt-4">
+              <RouterLink to="/missions" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm">
+                ✨ Crear mi primera misión
+              </RouterLink>
+              <RouterLink to="/guide" class="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-xl transition text-sm">
+                📖 Ver guía paso a paso
+              </RouterLink>
+            </div>
+          </div>
+          <span class="text-6xl opacity-80">🦞</span>
+        </div>
+      </div>
+
       <!-- Stats Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">

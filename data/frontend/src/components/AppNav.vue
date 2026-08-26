@@ -14,7 +14,6 @@ const navItems = [
   { path: '/providers', name: 'Providers', icon: '⚙️' },
   { path: '/admin', name: 'Admin', icon: '🛠️' }
 ]
-
 const isActive = (path: string) => {
   if (path === '/') return route.path === '/'
   return route.path.startsWith(path)
@@ -92,7 +91,14 @@ async function changePassword() {
         </div>
 
         <!-- User menu -->
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <RouterLink
+            to="/guide"
+            class="p-2 text-slate-400 hover:text-blue-400 hover:bg-slate-700 rounded-lg transition"
+            title="Guía de uso"
+          >
+            ❓
+          </RouterLink>
           <span class="text-sm text-slate-400 hidden md:inline">{{ userName }}</span>
           <button
             @click="showPasswordModal = true"
