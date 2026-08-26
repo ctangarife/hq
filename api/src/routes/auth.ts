@@ -310,10 +310,6 @@ router.post('/invitations', async (req, res, next) => {
       invitationId: invitation._id,
       email: invitation.email,
       workspaceName: invitation.workspaceName,
-      // En dev: incluir el link para testing
-      ...(process.env.NODE_ENV !== 'production' && {
-        devRegistrationUrl: `${frontendUrl}/accept-invitation?token=${invitation.token}`,
-      }),
     })
   } catch (error: any) {
     if (error.message.includes('ya') || error.message.includes('no encontrado')) {
