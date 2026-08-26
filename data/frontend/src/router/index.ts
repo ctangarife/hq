@@ -20,6 +20,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/LoginView.vue')
   },
   {
+    path: '/reset-password',
+    name: 'reset-password',
+    component: () => import('@/views/LoginView.vue')
+  },
+  {
     path: '/missions',
     name: 'missions',
     component: () => import('@/views/MissionsView.vue')
@@ -58,7 +63,7 @@ const router = createRouter({
 
 // Route guard: exigir JWT para todas las rutas excepto login/invitation
 router.beforeEach((to, _from, next) => {
-  const publicRoutes = ['/login', '/accept-invitation']
+  const publicRoutes = ['/login', '/accept-invitation', '/reset-password']
   const isPublic = publicRoutes.some(r => to.path.startsWith(r))
   const token = localStorage.getItem('hq_token')
 

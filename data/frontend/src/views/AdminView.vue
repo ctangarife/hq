@@ -4,12 +4,13 @@ import {
   workspacesService,
   promptsService,
   llmConfigService,
+  authService,
 } from "@/services/api";
 
 // ============================================================================
 // Tab state
 // ============================================================================
-const activeTab = ref<"workspaces" | "prompts" | "llm">("workspaces");
+const activeTab = ref<"workspaces" | "members" | "prompts" | "llm">("workspaces");
 
 // ============================================================================
 // Workspaces tab
@@ -20,7 +21,7 @@ interface Workspace {
   slug: string;
   description?: string;
   ownerId: string;
-  members: { userId: string; role: string }[];
+  members: { userId: string; role: string; email?: string }[];
   avatarStyle?: string;
   active: boolean;
 }
@@ -128,6 +129,91 @@ async function deleteWorkspace(wsId: string, name: string) {
 }
 
 // ============================================================================
+// ============================================================================
+// Members tab — Invitaciones y gestión de usuarios del workspace
+// ============================================================================
+interface Invitation {
+  _id: string;
+  email: string;
+  workspaceName: string;
+  role: string;
+  invitedByName: string;
+  sentAt: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  revokedAt?: string;
+}
+
+const invitations = ref<Invitation[]>([]);
+const invitationsLoading = ref(true);
+const inviteEmail = ref("");
+const inviteRole = ref("workspace_member");
+const inviteWsId = ref("");
+const inviting = ref(false);
+const inviteResult = ref<string | null>(null);
+const selectedWsForInvite = computed(() =>
+  workspaces.value.find(w => w._id === inviteWsId.value)
+);
+
+async function fetchInvitations() {
+  if (!inviteWsId.value) return;
+  try {
+    invitationsLoading.value = true;
+    const res = await authService.listInvitations(inviteWsId.value);
+    invitations.value = res.data;
+  } catch {
+    invitations.value = [];
+  } finally {
+    invitationsLoading.value = false;
+  }
+}
+
+async function sendInvitation() {
+  if (!inviteEmail.value || !inviteWsId.value) return;
+  inviting.value = true;
+  inviteResult.value = null;
+  try {
+    const res = await authService.createInvitation(inviteEmail.value, inviteWsId.value, inviteRole.value);
+    inviteResult.value = `✅ Invitación enviada a ${inviteEmail.value}`;
+    if (res.data.devRegistrationUrl) {
+      inviteResult.value += ` (dev: ${res.data.devRegistrationUrl})`;
+    }
+    inviteEmail.value = "";
+    await fetchInvitations();
+  } catch (err: any) {
+    inviteResult.value = `❌ ${err.response?.data?.error || err.message}`;
+  } finally {
+    inviting.value = false;
+  }
+}
+
+async function revokeInvitation(inv: Invitation) {
+  if (!confirm(`¿Revocar invitación de ${inv.email}?`)) return;
+  try {
+    await authService.revokeInvitation(inv._id);
+    await fetchInvitations();
+  } catch {
+    // silent
+  }
+}
+
+function roleLabel(role: string): string {
+  const labels: Record<string, string> = {
+    workspace_owner: "Propietario",
+    workspace_manager: "Admin",
+    workspace_member: "Miembro",
+    workspace_viewer: "Lector",
+  };
+  return labels[role] || role;
+}
+
+function invitationStatus(inv: Invitation): string {
+  if (inv.acceptedAt) return "aceptada";
+  if (inv.revokedAt) return "revocada";
+  if (new Date(inv.expiresAt) < new Date()) return "expirada";
+  return "pendiente";
+}
+
 // Prompts tab
 // ============================================================================
 interface Prompt {
@@ -322,11 +408,12 @@ onMounted(() => {
       <button
         v-for="tab in [
           { id: 'workspaces', label: 'Workspaces', icon: '🏢' },
+          { id: 'members', label: 'Miembros', icon: '👥' },
           { id: 'prompts', label: 'Prompts', icon: '📝' },
           { id: 'llm', label: 'LLM Keys', icon: '🔑' },
         ]"
         :key="tab.id"
-        @click="activeTab = tab.id as any"
+        @click="activeTab = tab.id as any; if (tab.id === 'members' && inviteWsId) fetchInvitations()"
         class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px"
         :class="
           activeTab === tab.id
@@ -434,6 +521,78 @@ onMounted(() => {
               >
                 Eliminar workspace
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         TAB: MEMBERS (Invitaciones)
+         ==================================================================== -->
+    <div v-show="activeTab === 'members'">
+      <div class="bg-slate-800 rounded-xl p-5 border border-slate-700/60 mb-6">
+        <h3 class="text-sm font-semibold text-slate-200 mb-4">📨 Invitar a un workspace</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-slate-400 text-xs mb-1">Workspace</label>
+            <select v-model="inviteWsId" @change="fetchInvitations()" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm">
+              <option value="">Seleccionar…</option>
+              <option v-for="ws in workspaces" :key="ws._id" :value="ws._id">{{ ws.name }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-400 text-xs mb-1">Email</label>
+            <input v-model="inviteEmail" type="email" placeholder="persona@email.com" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm" :disabled="!inviteWsId" />
+          </div>
+          <div>
+            <label class="block text-slate-400 text-xs mb-1">Rol</label>
+            <select v-model="inviteRole" class="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white text-sm">
+              <option value="workspace_owner">Propietario</option>
+              <option value="workspace_manager">Admin</option>
+              <option value="workspace_member">Miembro</option>
+              <option value="workspace_viewer">Lector</option>
+            </select>
+          </div>
+          <div class="flex items-end">
+            <button @click="sendInvitation()" :disabled="inviting || !inviteWsId || !inviteEmail" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50">
+              {{ inviting ? 'Enviando…' : '📨 Invitar' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="inviteResult" class="mt-3 p-3 rounded-lg text-sm" :class="inviteResult.startsWith('✅') ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'">
+          {{ inviteResult }}
+        </div>
+      </div>
+
+      <div v-if="!inviteWsId" class="text-center py-12 text-slate-500">Seleccioná un workspace</div>
+      <div v-else-if="invitationsLoading" class="text-center py-8 text-slate-400">Cargando…</div>
+      <div v-else-if="invitations.length === 0" class="text-center py-8 text-slate-500">Sin invitaciones todavía</div>
+      <div v-else class="space-y-2">
+        <div v-for="inv in invitations" :key="inv._id" class="bg-slate-800/60 rounded-lg p-4 border border-slate-700/40 flex items-center justify-between">
+          <div>
+            <p class="text-white text-sm font-medium">{{ inv.email }}</p>
+            <p class="text-slate-500 text-xs">{{ roleLabel(inv.role) }} · por {{ inv.invitedByName }}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="px-2.5 py-1 rounded-full text-xs font-medium" :class="{
+              'bg-green-900/50 text-green-300': invitationStatus(inv) === 'aceptada',
+              'bg-yellow-900/50 text-yellow-300': invitationStatus(inv) === 'pendiente',
+              'bg-red-900/50 text-red-300': invitationStatus(inv) === 'revocada',
+              'bg-slate-700 text-slate-400': invitationStatus(inv) === 'expirada',
+            }">{{ invitationStatus(inv) }}</span>
+            <button v-if="invitationStatus(inv) === 'pendiente'" @click="revokeInvitation(inv)" class="text-red-400 hover:text-red-300 text-xs">Revocar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="selectedWsForInvite?.members?.length" class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-200 mb-3">👥 Miembros actuales</h3>
+        <div class="space-y-2">
+          <div v-for="m in selectedWsForInvite.members" :key="m.userId" class="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30 flex items-center justify-between">
+            <div>
+              <p class="text-white text-sm">{{ m.email }}</p>
+              <p class="text-slate-500 text-xs">{{ roleLabel(m.role) }}</p>
             </div>
           </div>
         </div>

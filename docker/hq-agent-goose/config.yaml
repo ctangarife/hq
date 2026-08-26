@@ -15,7 +15,7 @@
 
 # --- Provider: openai-compatible apuntando a LiteLLM ---
 GOOSE_PROVIDER: openai
-GOOSE_MODEL: glm-4.7
+GOOSE_MODEL: glm-5.2
 
 # Sin extensions MCP por defecto — se activan por profile si la tarea lo requiere
 # (ej: researcher carga searxng + browser; writer no carga ninguna).

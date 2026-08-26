@@ -24,6 +24,118 @@ const router = Router()
 // PÚBLICAS (sin auth — son el punto de entrada)
 // ═══════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════
+// PÚBLICAS (sin auth — son el punto de entrada)
+// ═══════════════════════════════════════════════════════════
+
+// POST /api/auth/forgot-password — Enviar email de recuperación
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      return res.status(400).json({ error: 'email es requerido' })
+    }
+
+    const User = (await import('../models/User.js')).default
+    const PasswordReset = (await import('../models/PasswordReset.js')).default
+    const crypto = (await import('crypto')).default
+
+    const user = await User.findOne({ email: email.toLowerCase().trim(), active: true })
+    if (!user) {
+      // No revelar si el email existe (seguridad)
+      return res.json({ message: 'Si el email existe, recibirás un link de recuperación' })
+    }
+
+    // Invalidar resets anteriores
+    await PasswordReset.updateMany(
+      { userId: user._id, usedAt: { $exists: false } },
+      { usedAt: new Date() },
+    )
+
+    const token = crypto.randomBytes(32).toString('hex')
+    await PasswordReset.create({
+      userId: user._id,
+      email: user.email,
+      token,
+    })
+
+    // Enviar email
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8093'
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`
+    try {
+      const { sendEmail } = await import('../services/email.service.js')
+      await sendEmail({
+        to: user.email,
+        subject: '🔄 Recuperar contraseña — HQ',
+        html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #0f1424; border-radius: 16px; color: #e2e8f0;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="font-size: 24px; color: #ffffff;">🦞 HQ</h1>
+          </div>
+          <p style="font-size: 15px; color: #cbd5e1;">Hola ${user.name},</p>
+          <p style="font-size: 15px; color: #cbd5e1;">Recibimos una solicitud para recuperar tu contraseña. Hacé clic en el botón de abajo:</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${resetUrl}" style="display: inline-block; background: #3b82f6; color: white; font-size: 16px; font-weight: 600; padding: 14px 32px; border-radius: 10px; text-decoration: none;">
+              Crear nueva contraseña
+            </a>
+          </div>
+          <p style="font-size: 13px; color: #64748b; text-align: center;">Este link expira en 1 hora.</p>
+          <p style="font-size: 13px; color: #64748b; text-align: center;">Si no solicitaste esto, ignorá este email.</p>
+        </div>`,
+        text: `Recuperar contraseña: ${resetUrl}\n\nEste link expira en 1 hora.`,
+      })
+    } catch (emailErr: any) {
+      console.warn(`⚠️ Reset email falló: ${emailErr.message}`)
+    }
+
+    res.json({ message: 'Si el email existe, recibirás un link de recuperación' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// POST /api/auth/reset-password — Establecer nueva contraseña con token
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'token y newPassword son requeridos' })
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' })
+    }
+
+    const PasswordReset = (await import('../models/PasswordReset.js')).default
+    const User = (await import('../models/User.js')).default
+    const bcrypt = (await import('bcryptjs')).default
+
+    const reset = await PasswordReset.findOne({
+      token,
+      usedAt: { $exists: false },
+      expiresAt: { $gt: new Date() },
+    })
+
+    if (!reset) {
+      return res.status(400).json({ error: 'Link inválido o expirado' })
+    }
+
+    const user = await User.findById(reset.userId)
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' })
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10)
+    await user.save()
+
+    reset.usedAt = new Date()
+    await reset.save()
+
+    res.json({ message: 'Contraseña actualizada. Ya podés iniciar sesión.' })
+  } catch (error) {
+    next(error)
+  }
+})
+
 // POST /api/auth/register — Signup con invitación
 router.post('/register', async (req, res, next) => {
   try {
@@ -110,6 +222,39 @@ router.get('/invitation/:token', async (req, res, next) => {
 
 // Aplicar JWT auth a las rutas protegidas
 router.use(jwtAuthMiddleware)
+
+// POST /api/auth/change-password — Cambiar contraseña del usuario autenticado
+router.post('/change-password', requireUser, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword y newPassword son requeridos' })
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres' })
+    }
+
+    const User = (await import('../models/User.js')).default
+    const bcrypt = (await import('bcryptjs')).default
+
+    const user = await User.findById(req.user!.userId)
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' })
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!valid) {
+      return res.status(401).json({ error: 'Contraseña actual incorrecta' })
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10)
+    await user.save()
+
+    res.json({ message: 'Contraseña actualizada exitosamente' })
+  } catch (error) {
+    next(error)
+  }
+})
 
 // GET /api/auth/me — Perfil del usuario autenticado
 router.get('/me', requireUser, async (req: AuthenticatedRequest, res, next) => {

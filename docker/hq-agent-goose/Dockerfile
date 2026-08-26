@@ -54,7 +54,7 @@ COPY config.yaml /config/goose/config.yaml
 # IMPORTANTE: sin sufijo /v1 — Goose lo añade automáticamente al construir
 # la URL (openai-host + /v1/chat/completions). Poner /v1 aquí causaría doble.
 ENV OPENAI_HOST=https://litellm.ctangarife.com
-ENV GOOSE_MODEL=glm-4.7
+ENV GOOSE_MODEL=glm-5.2
 
 # Desactivar las developer/file tools de Goose (write/edit/todo):
 # el efímero debe responder SOLO con texto. Con tools activas, el modelo

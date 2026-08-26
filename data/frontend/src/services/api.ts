@@ -239,4 +239,27 @@ export const llmConfigService = {
   getAll: () => api.get('/llm-config'),
 }
 
+// =====================================================================
+// Auth Services
+// =====================================================================
+export const authService = {
+  login: (email: string, password: string) =>
+    api.post('/auth/login', { email, password }),
+  me: () => api.get('/auth/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { currentPassword, newPassword }),
+  logout: () => {
+    localStorage.removeItem('hq_token')
+    localStorage.removeItem('hq_user')
+    window.location.href = '/login'
+  },
+  // Invitaciones
+  createInvitation: (email: string, workspaceId: string, role: string) =>
+    api.post('/auth/invitations', { email, workspaceId, role }),
+  listInvitations: (workspaceId: string) =>
+    api.get(`/auth/invitations/${workspaceId}`),
+  revokeInvitation: (invitationId: string) =>
+    api.delete(`/auth/invitations/${invitationId}`),
+}
+
 export default api
