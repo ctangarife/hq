@@ -171,6 +171,16 @@ class TaskDispatcherService {
         prompt += `**Contexto adicional:** ${mission.context}\n\n`
       }
       prompt += `**REGLA DE FIDELIDAD:** No inventes objetivos que no están en el brief. Cada pieza que produzcas debe servir EXACTAMENTE al propósito descrito arriba.\n\n`
+
+      // ESTILO EDITORIAL HQ (reglas de estilo universales para contenido de
+      // negocios locales — nacidas de feedback profesional real: el contenido
+      // "marketero genérico" dice lo mismo que cualquier bar y no convence).
+      prompt += `**ESTILO EDITORIAL OBLIGATORIO:**
+1. ESPECÍFICO > GENÉRICO. Prohibidas las frases marketeras vacías: "experiencia única", "gastronomía que sorprende", "el sabor se une con el ambiente", "un evento inolvidable", "de primera". Úsa SIEMPRE nombres propios y datos concretos: el nombre del producto, del plato, del aliado, el precio, el barrio. Si un dato específico falta, escribe un placeholder explícito tipo [DATO: nombre de la cerveza] — nunca lo sustituyas con una frase genérica.
+2. VOZ. Usa el tratamiento que el brief indique. Por defecto en Colombia (especialmente Antioquia/Eje Cafetero): USTEDEO ("lo invitamos", "no se lo pierda", "su parche"). NUNCA voseo ("activá", "no te lo perdás") salvo que la marca lo pida.
+3. EMOJIS. Máximo 2 en toda la pieza, usados con moderación como firma de la marca — nunca decorando cada línea. Si la marca no define sus emojis, deja placeholders [EMOJI FIRMA] donde aporten.
+4. LA PREGUNTA REAL. Cada pieza debe responder qué hay EN ESTE lugar que justifica que el cliente vaya hasta allí (su producto concreto, su razón de viaje), no describir atmósferas que valdrían para cualquier bar de la ciudad.
+5. HASHTAGS. Solo ultra-locales (barrio, ciudad, zona). Sin hashtags masivos o genéricos (#CraftBeer #SaturdayVibes #GastroBar): traen alcance de gente que nunca irá.\n\n`
     }
 
     prompt += `# Tarea: ${task.title}\n\n`

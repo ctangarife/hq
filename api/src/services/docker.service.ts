@@ -202,7 +202,10 @@ export class DockerService {
       OpenStdin: true,
       Tty: false,
       HostConfig: {
-        AutoRemove: true,  // --rm: el container se borra solo al terminar
+        // Sin AutoRemove: necesitamos leer logs DESPUÉS de que el container
+        // termine. Con AutoRemove, el container ya no existe cuando intentamos
+        // leer → 404. El cleanup es manual en el finally.
+        AutoRemove: false,
         NetworkMode: network,
       },
       Labels: {
@@ -212,9 +215,8 @@ export class DockerService {
     })
 
     try {
-      // Secuencia start→attach→write (la validada en producción). Nota: un
-      // attach ANTES de start se cuelga en podman (docker API exige container
-      // running para attach stream) — probado y descartado.
+      // Secuencia start→attach→write. El stream puede desalinearse (bytes
+      // corruptos como prefijo de cada línea) — cleanGooseOutput lo sanitiza.
       await container.start()
 
       const stream = await container.attach({ stream: true, stdin: true, stdout: true, stderr: true })
@@ -224,6 +226,8 @@ export class DockerService {
       // Capturar stdout
       const output = await this.captureContainerOutput(container, options.timeoutMs ?? 300000)
       console.log(`[ephemeral] task completed (${output.length} chars output)`)
+      // Cleanup manual (sin AutoRemove)
+      try { await container.remove({ force: true }) } catch {}
       return output.trim()
     } catch (error) {
       // AutoRemove se encarga del cleanup, pero forzamos por si acaso
@@ -239,53 +243,21 @@ export class DockerService {
    * dejando solo la respuesta del modelo.
    */
   private async captureContainerOutput(container: any, timeoutMs: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = []
-      let settled = false
-
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true
-          try { container.kill() } catch {}
-          reject(new Error(`Ephemeral task timed out after ${timeoutMs}ms`))
-        }
+    // Esperar a que el container TERMINE, luego leer logs en un solo golpe.
+    // El streaming concurrente (follow:true + wait() en paralelo) desalineaba
+    // los frames del stream multiplexado → bytes corruptos en cada línea.
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        try { container.kill() } catch {}
+        reject(new Error(`Ephemeral task timed out after ${timeoutMs}ms`))
       }, timeoutMs)
-
-      container.wait().then(() => {
-        if (!settled) {
-          settled = true
-          clearTimeout(timer)
-          const raw = Buffer.concat(chunks).toString('utf-8')
-          // Filtrar el banner de Goose y líneas vacías iniciales
-          const cleaned = this.cleanGooseOutput(raw)
-          resolve(cleaned)
-        }
-      }).catch(reject)
-
-      // Capturar stdout vía log stream (follow hasta que el container termine)
-      container.logs({
-        stdout: true,
-        stderr: false,
-        follow: true,
-      }).then((logStream: any) => {
-        logStream.on('data', (chunk: Buffer) => chunks.push(chunk))
-        logStream.on('end', () => {
-          if (!settled) {
-            settled = true
-            clearTimeout(timer)
-            const raw = Buffer.concat(chunks).toString('utf-8')
-            resolve(this.cleanGooseOutput(raw))
-          }
-        })
-        logStream.on('error', (err: Error) => {
-          if (!settled) {
-            settled = true
-            clearTimeout(timer)
-            reject(err)
-          }
-        })
-      }).catch(reject)
     })
+
+    await Promise.race([container.wait(), timeoutPromise])
+
+    const logs = await container.logs({ stdout: true, stderr: false })
+    const raw = logs.toString('utf-8')
+    return this.cleanGooseOutput(raw)
   }
 
   /**
@@ -304,7 +276,13 @@ export class DockerService {
       .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
       .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
 
-    const lines = ansiClean.split('\n')
+    // Desalineación del stream multiplexado: cada línea puede llegar con 1-2
+    // bytes corruptos como prefijo ('v  content:', 'c- [x]', '�- [x]').
+    // Quitamos 1-3 chars no-ASCII/Latin-extended del inicio si siguen
+    // inmediatamente a contenido imprimible legítimo.
+    const lines = ansiClean.split('\n').map(line =>
+      line.replace(/^[\uFFFD\u00C0-\u024F\u2000-\u206F]{1,3}(?=[\w\s#*\-\[\({"'>!¿¡@\d])/, '')
+    )
 
     // Banner de Goose (en cualquier posición — puede haber líneas vacías antes)
     const bannerPatterns = [

@@ -152,7 +152,7 @@ Follow best practices for security, performance, and maintainability.`,
     id: 'writer',
     name: 'Writer',
     role: 'writer',
-    defaultLlmModel: 'kimi-k3',
+    defaultLlmModel: 'glm-5.2',
     defaultProvider: 'zai',
     capabilities: [
       'content_generation',
