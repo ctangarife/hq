@@ -86,6 +86,14 @@ interface UploadedFile {
 const missions = ref<Mission[]>([])
 const humanTasks = ref<HumanTask[]>([])
 const showCreateModal = ref(false)
+// Modo de creación: 'content' (marketing) | 'fact_check' (verificar noticia).
+// Mismo motor — cambia la entrada visual y el prompt del enriquecedor.
+const createMode = ref<'content' | 'fact_check'>('content')
+
+function openCreateModal(mode: 'content' | 'fact_check' = 'content') {
+  createMode.value = mode
+  showCreateModal.value = true
+}
 const showEditModal = ref(false)  // NEW: Edit mission modal
 const showTasksModal = ref(false)
 const showLogModal = ref(false)
@@ -477,7 +485,7 @@ const enrichMission = async () => {
   }
   enriching.value = true
   try {
-    const { data } = await missionsService.enrich(enrichSeed.value.trim())
+    const { data } = await missionsService.enrich(enrichSeed.value.trim(), createMode.value)
     const b = data.brief
     formData.value.title = b.title || formData.value.title
     formData.value.description = b.description || formData.value.description
@@ -696,12 +704,21 @@ onMounted(() => {
         <h1 class="text-3xl font-bold text-white">Misiones</h1>
         <p class="text-gray-400 mt-1">Gestiona los objetivos de tu squad de IA con orquestación automática</p>
       </div>
-      <button
-        @click="showCreateModal = true"
-        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
-      >
-        + Nueva Misión
-      </button>
+      <div class="flex gap-2">
+        <button
+          @click="openCreateModal('fact_check')"
+          class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition flex items-center gap-1.5"
+          title="Verificar una noticia o afirmación con agentes de fact-checking"
+        >
+          🔎 Verificar Noticia
+        </button>
+        <button
+          @click="openCreateModal('content')"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+        >
+          + Nueva Misión
+        </button>
+      </div>
     </header>
 
     <!-- Error State -->
@@ -903,19 +920,48 @@ onMounted(() => {
       <div class="bg-gray-800 rounded-lg w-full max-w-lg border border-gray-700 flex flex-col max-h-[90vh]">
         <!-- Header -->
         <div class="p-4 border-b border-gray-700 flex-shrink-0">
-          <h2 class="text-xl font-bold text-white">Nueva Misión</h2>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span v-if="createMode === 'fact_check'">🔎 Verificar Noticia</span>
+            <span v-else>Nueva Misión</span>
+          </h2>
+          <p v-if="createMode === 'fact_check'" class="text-amber-300/80 text-sm mt-1">
+            Pegue la noticia o afirmación — los agentes la verificarán contra fuentes en internet
+          </p>
         </div>
 
         <!-- Scrollable Content -->
         <div class="p-4 overflow-y-auto flex-1">
           <!-- ✨ Enriquecedor: idea en una línea → brief completo -->
-          <div class="mb-4 p-3 rounded-lg bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-700/40">
-            <label class="block text-purple-200 text-sm font-medium mb-2">
-              ✨ Describa su idea en una línea
-              <span class="text-purple-400/70 font-normal text-xs">— la IA la convierte en brief completo</span>
+          <div
+            class="mb-4 p-3 rounded-lg border"
+            :class="createMode === 'fact_check'
+              ? 'bg-gradient-to-r from-amber-900/30 to-orange-900/30 border-amber-700/40'
+              : 'bg-gradient-to-r from-purple-900/30 to-blue-900/30 border-purple-700/40'"
+          >
+            <label
+              class="block text-sm font-medium mb-2"
+              :class="createMode === 'fact_check' ? 'text-amber-200' : 'text-purple-200'"
+            >
+              <template v-if="createMode === 'fact_check'">
+                📰 Noticia o afirmación a verificar
+                <span class="text-amber-400/70 font-normal text-xs">— la IA la descompone en claims verificables</span>
+              </template>
+              <template v-else>
+                ✨ Describa su idea en una línea
+                <span class="text-purple-400/70 font-normal text-xs">— la IA la convierte en brief completo</span>
+              </template>
             </label>
             <div class="flex gap-2">
+              <textarea
+                v-if="createMode === 'fact_check'"
+                v-model="enrichSeed"
+                :disabled="enriching"
+                rows="3"
+                class="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded text-white text-sm"
+                placeholder="Pegue el texto de la noticia, la afirmación, o el URL. Ej: «Dicen que el alcalde va a cerrar el parque los domingos…»"
+              />
               <input
+                v-else
                 v-model="enrichSeed"
                 type="text"
                 :disabled="enriching"
@@ -927,14 +973,26 @@ onMounted(() => {
                 type="button"
                 @click="enrichMission"
                 :disabled="enriching"
-                class="px-4 py-2 rounded text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap"
-                :class="enriching ? 'bg-purple-900 text-purple-300 cursor-wait' : 'bg-purple-600 hover:bg-purple-700 text-white'"
+                class="px-4 py-2 rounded text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap self-start"
+                :class="createMode === 'fact_check'
+                  ? (enriching ? 'bg-amber-900 text-amber-300 cursor-wait' : 'bg-amber-600 hover:bg-amber-700 text-white')
+                  : (enriching ? 'bg-purple-900 text-purple-300 cursor-wait' : 'bg-purple-600 hover:bg-purple-700 text-white')"
               >
-                <span v-if="enriching" class="inline-block w-3 h-3 border-2 border-purple-300 border-t-transparent rounded-full animate-spin"></span>
-                {{ enriching ? 'Enriqueciendo…' : '✨ Enriquecer' }}
+                <span v-if="enriching" class="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                {{ enriching
+                    ? (createMode === 'fact_check' ? 'Preparando verificación…' : 'Enriqueciendo…')
+                    : (createMode === 'fact_check' ? '🔎 Preparar verificación' : '✨ Enriquecer') }}
               </button>
             </div>
-            <p v-if="enriching" class="text-purple-300/70 text-xs mt-1.5">Redactando brief profesional (~15-30s)…</p>
+            <p
+              v-if="enriching"
+              class="text-xs mt-1.5"
+              :class="createMode === 'fact_check' ? 'text-amber-300/70' : 'text-purple-300/70'"
+            >
+              {{ createMode === 'fact_check'
+                  ? 'Descomponiendo la afirmación en claims verificables (~15-30s)…'
+                  : 'Redactando brief profesional (~15-30s)…' }}
+            </p>
           </div>
 
           <form @submit.prevent="createMission" class="space-y-4">
@@ -1151,7 +1209,9 @@ onMounted(() => {
             >
               <p class="text-gray-400 text-sm">Arrastre archivos aquí o haga clic para seleccionar</p>
               <p class="text-gray-600 text-xs mt-1">
-                Menús, listas de precios, textos de marca… (txt, md, csv, json, pdf, docx, imágenes)
+                {{ createMode === 'fact_check'
+                    ? 'Screenshot o PDF de la noticia, capturas de donde circuló… (txt, pdf, png, jpg)'
+                    : 'Menús, listas de precios, textos de marca… (txt, md, csv, json, pdf, docx, imágenes)' }}
               </p>
               <input
                 ref="fileInputRef"
@@ -1206,7 +1266,7 @@ onMounted(() => {
               class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="submitting || orchestrating || !formData.title || !formData.description"
             >
-              {{ submitting ? 'Creando...' : orchestrating ? 'Orquestando...' : 'Crear Misión' }}
+              {{ submitting ? 'Creando...' : orchestrating ? 'Orquestando...' : (createMode === 'fact_check' ? '🔎 Crear Verificación' : 'Crear Misión') }}
             </button>
           </div>
         </div>

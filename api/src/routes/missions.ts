@@ -23,12 +23,25 @@ const router = Router()
 // usuario revisa/edita ANTES de crear la misión — no crea nada por sí mismo.
 router.post('/enrich', async (req, res, next) => {
   try {
-    const { seed } = req.body
+    const { seed, mode } = req.body
     if (!seed || typeof seed !== 'string' || seed.trim().length < 3) {
       return res.status(400).json({ error: 'seed (idea breve) es requerido' })
     }
 
-    const system = `Eres un estratega de contenido y marketing senior. Recibes una idea BREVE de misión y la conviertes en un BRIEF profesional completo para un equipo de agentes IA de contenido.
+    // Modo fact_check: mismo endpoint, brief orientado a verificación de
+    // noticias (descompone el claim en sub-claims verificables).
+    const system = mode === 'fact_check'
+      ? `Eres un verificador de hechos senior. Recibes una NOTICIA, AFIRMACIÓN o URL (puede venir incompleta) y la conviertes en un BRIEF de misión de verificación para un equipo de agentes IA con acceso a internet.
+
+REGLAS:
+- Descompón la afirmación en sub-claims verificables de forma independiente (una noticia falsa suele mezclar datos reales con inventados).
+- NO verifiques tú mismo ni concluyas nada sobre la veracidad — solo estructura el trabajo de verificación.
+- El plan debe incluir: búsqueda del claim exacto y su origen, verificación de datos ancla (cifras, fechas, nombres, citas) contra fuentes primarias, contraste con verificadores profesionales (ColombiaCheck, AFP Factual, Snopes, Reuters Fact Check) y medios establecidos.
+- Si el texto incluye una URL, inclúyela en el context para que los agentes la visiten.
+- Mantén el español neutro y periodístico.
+- Responde SOLO con un JSON válido, sin markdown, con EXACTAMENTE estos campos:
+{"title": "Verificación: <resumen corto del claim>", "description": "brief con los sub-claims numerados a verificar y cómo verificar cada uno", "objective": "determinar la veracidad del claim con evidencia trazable", "context": "texto/URL de la noticia original y contexto de circulación", "audience": "público general que recibió la noticia", "tone": "neutral y periodístico", "deliverableFormat": "reporte de verificación: veredicto (✓ Verdadero / ⚠ Engañoso / ✗ Falso / ❓ Sin evidencia) + evidencia por sub-claim con fuentes y fechas + contexto omitido + nivel de confianza", "successCriteria": "cada sub-claim con al menos 2 fuentes independientes citadas; veredicto explícito con justificación", "constraints": "ninguna", "priority": "high|medium|low"}`
+      : `Eres un estratega de contenido y marketing senior. Recibes una idea BREVE de misión y la conviertes en un BRIEF profesional completo para un equipo de agentes IA de contenido.
 
 REGLAS:
 - Enriquece la idea: propón entregables concretos (con formato, extensión y cantidad), audiencia, tono y criterios de éxito.
@@ -37,7 +50,9 @@ REGLAS:
 - Responde SOLO con un JSON válido, sin markdown, con EXACTAMENTE estos campos:
 {"title": "conciso", "description": "brief detallado con entregables numerados", "objective": "una línea", "context": "contexto del proyecto", "audience": "audiencia específica", "tone": "tono recomendado", "deliverableFormat": "formato de entrega", "successCriteria": "qué define el éxito", "constraints": "restricciones o 'ninguna'", "priority": "high|medium|low"}`
 
-    const user = `Idea del usuario: "${seed.trim()}"`
+    const user = mode === 'fact_check'
+      ? `Noticia/afirmación del usuario: "${seed.trim()}"`
+      : `Idea del usuario: "${seed.trim()}"`
 
     const content = await litellmService.chatCompletion(
       [{ role: 'system', content: system }, { role: 'user', content: user }],

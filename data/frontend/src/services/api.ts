@@ -41,7 +41,8 @@ export const missionsService = {
   getById: (id: string) => api.get(`/missions/${id}`),
   create: (data: any) => api.post('/missions', data),
   // Enriquecedor: idea breve → brief profesional (glm-5.2), no crea nada
-  enrich: (seed: string) => api.post('/missions/enrich', { seed }, { timeout: 120000 }),
+  enrich: (seed: string, mode?: 'content' | 'fact_check') =>
+    api.post('/missions/enrich', { seed, mode }, { timeout: 120000 }),
   dashboardStats: () => api.get('/missions/dashboard-stats'),
   update: (id: string, data: any) => api.put(`/missions/${id}`, data),
   delete: (id: string) => api.delete(`/missions/${id}`),
