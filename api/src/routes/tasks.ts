@@ -666,6 +666,16 @@ router.post('/:id/retry', async (req, res, next) => {
 
     await task.save()
 
+    // Disparar el dispatcher: una tarea especialista reintentada no la toma
+    // nadie por sí sola (el polling del orquestador solo la rescata si sigue
+    // asignada a su container) — sin esto el retry quedaba pendiente para siempre.
+    try {
+      const { taskDispatcherService } = await import('../services/task-dispatcher.service.js')
+      await taskDispatcherService.dispatchReadySpecialistTasks(task.missionId.toString())
+    } catch (dispatchErr: any) {
+      console.warn(`[retry] dispatch trigger failed: ${dispatchErr.message}`)
+    }
+
     // Log activity
     await activityLog.log({
       type: 'task',
