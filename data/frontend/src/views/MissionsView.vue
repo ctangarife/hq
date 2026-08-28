@@ -112,6 +112,28 @@ const createdMissionId = ref<string | null>(null)  // NEW: Store created mission
 const squadLeadPlan = ref<MissionPlan | null>(null)  // NEW: Store Squad Lead's plan
 const showAdditionalContext = ref(false)  // NEW: Toggle for additional context section
 
+// Archivos fuente subidos durante la creación de la misión: se guardan en el
+// cliente y se suben justo después de crear (el endpoint necesita missionId),
+// ANTES de orquestar — así el Squad Lead ya los ve al planificar.
+const stagedFiles = ref<File[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function handleFileStaging(e: Event) {
+  const dt = (e as DragEvent).dataTransfer
+  const files = dt ? dt.files : (e.target as HTMLInputElement).files
+  if (!files) return
+  for (const f of Array.from(files)) {
+    if (!stagedFiles.value.some(s => s.name === f.name && s.size === f.size)) {
+      stagedFiles.value.push(f)
+    }
+  }
+  if (fileInputRef.value) fileInputRef.value.value = '' // permitir re-selección
+}
+
+function removeStagedFile(idx: number) {
+  stagedFiles.value.splice(idx, 1)
+}
+
 
 // Form data
 const formData = ref<{
@@ -257,9 +279,30 @@ const createMission = async () => {
     if (formData.value.tone) missionData.tone = formData.value.tone
 
     const response = await missionsService.create(missionData)
+    const missionId = response.data._id
 
     // Store the created mission ID
-    createdMissionId.value = response.data._id
+    createdMissionId.value = missionId
+
+    // Subir archivos fuente ANTES de orquestar: el Squad Lead los incluye
+    // en el brief al planificar y los especialistas reciben su contenido.
+    // Un archivo que falle no bloquea la misión.
+    if (stagedFiles.value.length > 0) {
+      for (const file of stagedFiles.value) {
+        try {
+          await attachmentsService.upload(missionId, file, 'mission_input')
+        } catch (err: any) {
+          console.error(`Error subiendo ${file.name}:`, err)
+          alert(`No se pudo subir "${file.name}" — la misión continúa sin él. Puede subirlo luego con 📎.`)
+        }
+      }
+      stagedFiles.value = []
+    }
+
+    // Capturar la decisión de orquestación ANTES del reset (antes el reset
+    // dejaba autoOrchestrate en false y la orquestación al crear nunca disparaba)
+    const shouldOrchestrate = formData.value.autoOrchestrate
+    const missionTypeAtCreation = formData.value.missionType
 
     // Reset form and close modal
     formData.value = {
@@ -279,12 +322,12 @@ const createMission = async () => {
     showCreateModal.value = false
 
     // If auto-orchestrate is enabled and it's AUTO_ORCHESTRATED type, show plan preview first
-    if (formData.value.autoOrchestrate && formData.value.missionType === 'AUTO_ORCHESTRATED') {
+    if (shouldOrchestrate && missionTypeAtCreation === 'AUTO_ORCHESTRATED') {
       // Fetch the initial analysis task result for plan preview
-      await fetchMissionPlan(response.data._id)
-    } else if (formData.value.autoOrchestrate) {
+      await fetchMissionPlan(missionId)
+    } else if (shouldOrchestrate) {
       // For other types, orchestrate directly
-      await orchestrateMission(response.data._id)
+      await orchestrateMission(missionId)
     }
 
     // Refresh list
@@ -1094,6 +1137,53 @@ onMounted(() => {
           <div v-if="formData.missionType === 'MANUAL'" class="p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
             <p class="text-gray-300 text-sm">
               ✋ <strong>Modo Manual:</strong> Crea la misión en estado borrador. Luego podrás crear y asignar tareas manualmente desde el panel de control.
+            </p>
+          </div>
+
+          <!-- Archivos fuente de la misión -->
+          <div>
+            <label class="block text-gray-400 text-sm mb-1">📎 Archivos fuente (opcional)</label>
+            <div
+              class="border-2 border-dashed border-gray-600 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition"
+              @click="fileInputRef?.click()"
+              @dragover.prevent
+              @drop.prevent="handleFileStaging"
+            >
+              <p class="text-gray-400 text-sm">Arrastre archivos aquí o haga clic para seleccionar</p>
+              <p class="text-gray-600 text-xs mt-1">
+                Menús, listas de precios, textos de marca… (txt, md, csv, json, pdf, docx, imágenes)
+              </p>
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                class="hidden"
+                accept=".txt,.md,.csv,.json,.pdf,.docx,.png,.jpg,.jpeg,.webp,.xml,.html"
+                @change="handleFileStaging"
+              />
+            </div>
+            <div v-if="stagedFiles.length > 0" class="mt-2 space-y-1">
+              <div
+                v-for="(f, i) in stagedFiles"
+                :key="`${f.name}-${f.size}`"
+                class="flex items-center justify-between bg-gray-700/60 rounded px-3 py-1.5 gap-2"
+              >
+                <span class="text-gray-300 text-sm truncate">
+                  {{ f.name }}
+                  <span class="text-gray-500 text-xs">({{ (f.size / 1024).toFixed(0) }} KB)</span>
+                </span>
+                <button
+                  type="button"
+                  @click="removeStagedFile(i)"
+                  class="text-red-400 hover:text-red-300 text-sm shrink-0"
+                  title="Quitar archivo"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <p class="text-gray-600 text-xs mt-1">
+              Los agentes reciben el contenido de estos archivos como fuente primaria del brief.
             </p>
           </div>
         </form>

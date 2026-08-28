@@ -133,6 +133,10 @@ export class FileManagementService {
     const missionPath = path.join(this.basePath, 'missions', missionId)
     const inputsPath = path.join(missionPath, 'inputs')
 
+    // La misión puede no tener estructura aún (ej: se acaba de crear y el
+    // usuario adjunta archivos desde el modal de creación) — garantizarla
+    await mkdirp(inputsPath)
+
     // Generar ID único
     const fileId = crypto.randomBytes(16).toString('hex')
     const ext = path.extname(originalName)
@@ -317,8 +321,10 @@ export class FileManagementService {
         missionId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        outputFiles: []
-      }
+        inputFiles: [],
+        outputFiles: [],
+        totalSize: 0
+      } as MissionMetadata
     }
 
     updater(metadata)
