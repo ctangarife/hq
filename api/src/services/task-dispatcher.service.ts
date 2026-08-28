@@ -95,9 +95,11 @@ class TaskDispatcherService {
       // en vez de early access) porque el plan del Squad Lead resume.
       const mission = await Mission.findById(task.missionId).lean()
 
-      // 3. Construir el prompt: personalidad + brief completo + adjuntos + tarea
+      // 3. Construir el prompt: personalidad + brief + adjuntos + INSUMOS de
+      // tareas previas (la cadena: el output del researcher alimenta al writer)
       const attachmentsContext = await this.buildAttachmentsContext(String(task.missionId))
-      const prompt = this.buildSpecialistPrompt(task, agent, mission, attachmentsContext)
+      const upstreamContext = await this.buildUpstreamContext(task)
+      const prompt = this.buildSpecialistPrompt(task, agent, mission, attachmentsContext, upstreamContext)
       const model = agent?.llmModel || undefined
 
       // 4. Ejecutar en Goose efímero
@@ -123,6 +125,14 @@ class TaskDispatcherService {
         status: 'completed',
         output: task.output,
       })
+
+      // La cadena: al completar, las tareas que dependían de esta quedan
+      // desbloqueadas — re-dispatchearlas (con nuestros outputs como insumos)
+      try {
+        await this.dispatchReadySpecialistTasks(String(task.missionId))
+      } catch (e: any) {
+        console.warn(`[dispatcher] post-completion dispatch failed: ${e.message}`)
+      }
     } catch (error: any) {
       console.error(`[dispatcher] task ${task._id} failed:`, error.message)
       task.status = 'failed'
@@ -153,6 +163,40 @@ class TaskDispatcherService {
    *
    * Goose recibe todo por stdin como un prompt plano.
    */
+  /**
+   * Insumos de la cadena: outputs de las dependencias completadas de la
+   * tarea. Sin esto las dependencias solo secuenciaban — el trabajo del
+   * upstream nunca llegaba al downstream ("quién le entregó a quién").
+   * Cap: 3 insumos × 4000 chars para no inflar el prompt.
+   */
+  private async buildUpstreamContext(task: ITask): Promise<string> {
+    if (!task.dependencies || task.dependencies.length === 0) return ''
+
+    try {
+      const deps = await Task.find({
+        _id: { $in: task.dependencies },
+        status: 'completed',
+      }).select('title output').lean()
+
+      if (deps.length === 0) return ''
+
+      const sections = deps.slice(0, 3).map(d => {
+        let result = (d as any).output?.result
+        result = typeof result === 'string' ? result
+          : result ? JSON.stringify(result) : ''
+        if (result.length > 4000) {
+          result = result.slice(0, 4000) + '\n…[truncado]'
+        }
+        return `\n### ${d.title}\n${result || '(sin output registrado)'}`
+      })
+
+      return `# Insumos de tareas previas (trabajo ya hecho por otros agentes — ÚSALO como base factual; no lo repitas tal cual, construye sobre él)\n${sections.join('\n')}\n\n`
+    } catch (err: any) {
+      console.warn(`[dispatcher] upstream context failed: ${err.message}`)
+      return ''
+    }
+  }
+
   /**
    * Describir una imagen adjunta con el modelo de visión del LiteLLM central
    * (glm-5.3-flash). Los especialistas no ven imágenes — esta descripción
@@ -297,7 +341,7 @@ class TaskDispatcherService {
     }
   }
 
-  private buildSpecialistPrompt(task: ITask, agent: any, mission?: any, attachmentsContext?: string): string {
+  private buildSpecialistPrompt(task: ITask, agent: any, mission?: any, attachmentsContext?: string, upstreamContext?: string): string {
     const personality = agent?.personality ||
       'You are a helpful AI assistant. Respond in Spanish.'
 
@@ -343,6 +387,12 @@ class TaskDispatcherService {
     // Material fuente adjuntado por el usuario (post-brief: refuerza el brief)
     if (attachmentsContext) {
       prompt += attachmentsContext
+    }
+
+    // Insumos de la cadena (output de dependencias): el material concreto
+    // sobre el que trabaja esta tarea — más específico que el brief
+    if (upstreamContext) {
+      prompt += upstreamContext
     }
 
     prompt += `# Tarea: ${task.title}\n\n`

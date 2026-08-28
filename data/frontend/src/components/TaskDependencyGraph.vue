@@ -104,6 +104,18 @@ const loadDAG = async () => {
   }
 }
 
+// Dependientes del nodo seleccionado ("entrega a") — desde los edges del DAG
+const selectedDependents = computed(() => {
+  if (!selectedNode.value || !dag.value) return []
+  return dag.value.edges
+    .filter(e => e.from === selectedNode.value!.taskId)
+    .map(e => ({
+      taskId: e.to,
+      title: dag.value?.nodes.find(n => n.taskId === e.to)?.title || e.to,
+      status: dag.value?.nodes.find(n => n.taskId === e.to)?.status || '',
+    }))
+})
+
 // Node positions
 const nodePositions = computed(() => {
   if (!dag.value) return new Map()
@@ -436,7 +448,7 @@ watch(() => props.missionId, () => {
           {{ selectedNode.blockingReason }}
         </div>
         <div v-if="selectedNode.dependencies.length > 0" class="mt-2">
-          <span class="text-gray-400 text-xs">Depende de:</span>
+          <span class="text-gray-400 text-xs">Depende de (sus insumos):</span>
           <div class="flex flex-wrap gap-1 mt-1">
             <span
               v-for="depId in selectedNode.dependencies"
@@ -444,6 +456,20 @@ watch(() => props.missionId, () => {
               class="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300"
             >
               {{ dag?.nodes.find(n => n.taskId === depId)?.title?.substring(0, 20) || depId }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="selectedDependents.length > 0" class="mt-2">
+          <span class="text-gray-400 text-xs">Entrega a (esperan este resultado):</span>
+          <div class="flex flex-wrap gap-1 mt-1">
+            <span
+              v-for="dep in selectedDependents"
+              :key="dep.taskId"
+              class="px-2 py-1 bg-blue-900/50 rounded text-xs text-blue-200"
+            >
+              {{ dep.title.substring(0, 20) }}
+              <span v-if="dep.status" class="text-blue-400/70">· {{ dep.status }}</span>
             </span>
           </div>
         </div>

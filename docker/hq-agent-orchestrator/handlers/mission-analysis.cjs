@@ -47,7 +47,12 @@ const PLAN_FALLBACK = `Formato del plan JSON (descripciones de UNA línea):
   ]
 }
 
-REGLA IMPORTANTE: si la misión produce contenido visual (posts de Instagram, imágenes, stories, carruseles), SIEMPRE incluye una tarea type "image_prompt" con assignedAgentRole "designer" para generar los prompts de imagen. También incluye un agente con role "designer" en el array agents.`;
+REGLA IMPORTANTE: si la misión produce contenido visual (posts de Instagram, imágenes, stories, carruseles), SIEMPRE incluye una tarea type "image_prompt" con assignedAgentRole "designer" para generar los prompts de imagen. También incluye un agente con role "designer" en el array agents.
+
+REGLA DE ENCADENAMIENTO (OBLIGATORIA): las tareas se ejecutan en CADENA con dependencias reales por id:
+- Investigación → Producción → Revisión/Auditoría. Toda tarea de producción (content_generation, image_prompt) DEPENDE de las tareas de investigación/web_search que la alimentan; la auditoría depende de TODAS las piezas que revisa.
+- Piezas hermanas del mismo tipo (ej: post #1 y post #2) pueden ir en PARALELO entre sí, pero cada una depende de sus insumos (investigación, dirección visual).
+- USA los ids reales de las tareas del plan en "dependencies". Un plan con TODAS las dependencias vacías es INVÁLIDO, salvo misiones de una sola tarea. Así el trabajo de cada agente alimenta al siguiente.`;
 
 const RESUME_FALLBACK = `Eres un agente Squad Lead. Tu trabajo es analizar misiones y crear planes de ejecución.
 
@@ -241,6 +246,11 @@ Plantillas de agentes disponibles:
 
 REGLA IMPORTANTE: HQ genera CONTENIDO (posts, reportes, análisis, guiones), NO software. NUNCA planees tareas de programación, desarrollo de features ni type code_execution — eso no es ejecutable por el equipo.
 
+REGLA DE ENCADENAMIENTO (OBLIGATORIA): las tareas se ejecutan en CADENA con dependencias reales por id:
+- Investigación → Producción → Revisión/Auditoría. Toda tarea de producción (content_generation, image_prompt) DEPENDE de las tareas de investigación/web_search que la alimentan; la auditoría depende de TODAS las piezas que revisa.
+- Piezas hermanas del mismo tipo (ej: post #1 y post #2) pueden ir en PARALELO entre sí, pero cada una depende de sus insumos (investigación, dirección visual).
+- USA los ids reales de las tareas del plan en "dependencies". Un plan con TODAS las dependencias vacías es INVÁLIDO, salvo misiones de una sola tarea. Así el trabajo de cada agente alimenta al siguiente.
+
 DEBES crear un plan JSON ahora. NO hagas preguntas.
 
 Formato del plan JSON:
@@ -334,6 +344,8 @@ async function generatePlan(task, startTime) {
 Título: ${task.title}
 Descripción: ${task.description || ''}
 
+REGLA DE ENCADENAMIENTO (OBLIGATORIA): encadena las tareas con dependencias reales por id — investigación → producción → revisión. Toda tarea de producción depende de las tareas de investigación que la alimentan; la auditoría depende de todas las piezas que revisa. Piezas hermanas (post #1, post #2) pueden ir en paralelo entre sí, pero cada una depende de sus insumos. Un plan con TODAS las dependencias vacías es INVÁLIDO salvo misiones de una sola tarea: el output de cada agente alimenta al siguiente.
+
 Responde SOLO un JSON compacto (sin markdown, sin texto extra), con
 descripciones de UNA línea:
 
@@ -342,7 +354,8 @@ descripciones de UNA línea:
   "complexity": "low|medium|high|critical",
   "summary": "una línea",
   "tasks": [
-    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|designer|writer|analyst"}
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|designer|writer|analyst"},
+    {"id": "task-2", "title": "...", "description": "una línea", "type": "content_generation|custom", "dependencies": ["task-1"], "priority": "high|medium|low", "assignedAgentRole": "writer|designer"}
   ],
   "agents": [
     {"id": "agent-1", "name": "...", "role": "researcher|designer|writer|analyst", "capabilities": ["una"]}

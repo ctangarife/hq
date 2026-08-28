@@ -427,8 +427,24 @@ export async function processSquadLeadOutput(
     }
   }
 
-  // Second pass: Process dependencies using the ID map
+  // Second pass: resolver dependencias INLINE de cada tarea del plan
+  // ("dependencies": ["task-1"] dentro del taskDef — el formato que el SL
+  // produce). Antes solo se leía un array output.dependencies separado que
+  // el plan jamás incluía: TODA cadena declarada se descartaba.
   const dependenciesMap = new Map<string, string[]>()
+  for (const taskDef of output.tasks) {
+    const realTaskId = taskIdMap.get(taskDef.id)
+    if (!realTaskId || !Array.isArray((taskDef as any).dependencies)) continue
+
+    const realDepIds = ((taskDef as any).dependencies as string[])
+      .map((tempId: string) => taskIdMap.get(tempId))
+      .filter((id: string | undefined): id is string => id !== undefined)
+
+    if (realDepIds.length > 0) {
+      dependenciesMap.set(realTaskId, realDepIds)
+    }
+  }
+  // Compat: formato alternativo output.dependencies {taskId, dependsOn}
   if (output.dependencies && Array.isArray(output.dependencies)) {
     for (const dep of output.dependencies) {
       const realTaskId = taskIdMap.get(dep.taskId)
