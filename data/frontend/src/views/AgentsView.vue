@@ -28,7 +28,7 @@ const submitting = ref(false);
 
 const formData = ref({
   name: "",
-  role: "Developer",
+  role: "Researcher",
   personality: "",
   llmModel: "",
 });
@@ -48,7 +48,7 @@ async function fetchAgents() {
 function resetForm() {
   formData.value = {
     name: "",
-    role: "Developer",
+    role: "Researcher",
     personality: "",
     llmModel: "",
   };
@@ -293,7 +293,6 @@ onMounted(() => {
               v-model="formData.role"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
             >
-              <option>Developer</option>
               <option>Researcher</option>
               <option>Squad Lead</option>
               <option>Writer</option>
@@ -365,7 +364,6 @@ onMounted(() => {
               v-model="formData.role"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
             >
-              <option>Developer</option>
               <option>Researcher</option>
               <option>Squad Lead</option>
               <option>Writer</option>

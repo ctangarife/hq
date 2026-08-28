@@ -56,18 +56,14 @@ COPY config.yaml /config/goose/config.yaml
 ENV OPENAI_HOST=https://litellm.ctangarife.com
 ENV GOOSE_MODEL=glm-5.2
 
-# Desactivar las developer/file tools de Goose (write/edit/todo):
-# el efímero debe responder SOLO con texto. Con tools activas, el modelo
-# "planifica" y escribe archivos — el stdout captura el proceso en vez del
-# entregable (validado empíricamente: con GOOSE_FILE=false el output es el
-# contenido limpio).
-ENV GOOSE_FILE=false
-
-# Desactivar también la SHELL tool: kimi-k3 la usaba para contar caracteres
-# del copy (python3/wc) y el proceso de bash contaminaba el output. Validado
-# en misión Club Estantería: "Posts de Instagram" llegó con bloques de
-# command/EOF mezclados con el entregable.
-ENV GOOSE_SHELL=false
+# NOTA: NO setear GOOSE_SHELL ni GOOSE_FILE aquí.
+# - GOOSE_FILE no existe como variable de goose (no desactiva nada).
+# - GOOSE_SHELL no es un toggle on/off: goose la interpreta como el EJECUTABLE
+#   a usar como shell, y "false" resuelve a /usr/bin/false → todo comando muere
+#   con exit code 1. Así estuvo funcionando: "limpiaba" el output porque el
+#   shell jamás ejecutaba nada, pero también impedía que el researcher navegara
+#   (los fetch a internet fallaban). El ruido de comandos se filtra en la API
+#   (docker.service → cleanGooseOutput).
 
 # Workspace efímero (donde goose escribe si la tarea genera archivos)
 RUN mkdir -p /workspace

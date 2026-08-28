@@ -4,7 +4,6 @@ import dotenv from 'dotenv'
 import { connectMongo } from './lib/mongodb.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { authMiddleware } from './middleware/auth.js'
-import { MissionTemplate } from './models/MissionTemplate.js'
 
 // Routes
 import missionRoutes from './routes/missions.js'
@@ -14,7 +13,6 @@ import modelsRoutes from './routes/models.js'
 import activityRoutes from './routes/activity.js'
 import resourcesRoutes from './routes/resources.js'
 import attachmentsRoutes from './routes/attachments.js'
-import missionTemplatesRoutes from './routes/mission-templates.routes.js'
 import llmConfigRoutes from './routes/llm-config.js'
 import workspaceRoutes from './routes/workspaces.js'
 import promptRoutes from './routes/prompts.js'
@@ -58,7 +56,6 @@ app.use('/api/models', modelsRoutes)
 app.use('/api/activity', activityRoutes)
 app.use('/api/resources', resourcesRoutes)
 app.use('/api/attachments', attachmentsRoutes)
-app.use('/api/mission-templates', missionTemplatesRoutes)
 app.use('/api/llm-config', llmConfigRoutes)
 app.use('/api/workspaces', workspaceRoutes)
 app.use('/api/prompts', promptRoutes)
@@ -72,9 +69,6 @@ async function start() {
     // Connect to MongoDB
     await connectMongo()
     console.log('MongoDB connected')
-
-    // Initialize system templates (Phase 10.2)
-    await MissionTemplate.initializeSystemTemplates()
 
     // Start listening
     app.listen(PORT, () => {

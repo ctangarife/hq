@@ -233,6 +233,17 @@ router.post('/mission/:missionId/send-pdf', async (req: AuthenticatedRequest, re
     const filename = path.basename(pdfFile.path)
     const pdfBuffer = await fileManagementService.getOutputFile(missionId, filename)
 
+    // Nombre legible para el adjunto (slug del título de la misión)
+    const safeTitle = (mission.title || 'entregable')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9\s-]/g, '').trim().replace(/\s+/g, '-')
+      .slice(0, 60) || 'entregable'
+    const attachment = {
+      filename: `${safeTitle}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf',
+    }
+
     // Enviar email
     const { sendEmail } = await import('../services/email.service.js')
     const missionTitle = mission.title || 'Entregable'
@@ -241,6 +252,7 @@ router.post('/mission/:missionId/send-pdf', async (req: AuthenticatedRequest, re
       await sendEmail({
         to: email,
         subject: `📋 ${missionTitle} — Tu entregable está listo`,
+        attachments: [attachment],
         html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #0f1424; border-radius: 16px; color: #e2e8f0;">
           <div style="text-align: center; margin-bottom: 24px;">

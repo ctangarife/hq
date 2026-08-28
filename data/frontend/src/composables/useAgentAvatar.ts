@@ -2,7 +2,7 @@
  * Mapeo de roles de agentes HQ → estilos DiceBear.
  *
  * Cada rol tiene un estilo visual distintivo para que el usuario pueda
- * diferenciar rápidamente qué tipo de agente es (researcher vs developer,
+ * diferenciar rápidamente qué tipo de agente es (researcher vs designer,
  * etc.) sin leer el texto. El seed determina el avatar concreto dentro de
  * cada estilo (mismo seed = mismo avatar siempre).
  *
@@ -17,7 +17,6 @@ const ROLE_STYLES: Record<string, string> = {
 
   // Especialistas (estilos distintivos por tipo de trabajo)
   researcher: 'adventurer',     // explorador/busca info
-  developer: 'bottts',          // robot técnico
   analyst: 'big-smile',         // analista, amigable
   writer: 'pixel-art',          // escritor, retro
   reviewer: 'avataaars',        // revisor, humano
@@ -32,7 +31,6 @@ const ROLE_FALLBACK_SEEDS: Record<string, string> = {
   squad_lead: 'commander',
   auditor: 'inspector',
   researcher: 'scout',
-  developer: 'codec',
   analyst: 'data',
   writer: 'quill',
   reviewer: 'lens',

@@ -4,17 +4,19 @@
  * Arquitectura híbrida Goose:
  *   - Squad Lead, Auditor     → agentes persistentes (polling loop, estado entre tareas)
  *   - Researcher, Writer,
- *     Developer, Analyst      → container efímero Goose (runEphemeralTask, 1 tarea = 1 container)
+ *     Designer, Analyst       → container efímero Goose (runEphemeralTask, 1 tarea = 1 container)
  *
  * Este servicio es el punto único de decisión: dada una tarea, determina si
  * debe ejecutarse inline (Goose efímero) o dejarse para un agente persistente
  * (que la tomará vía polling).
  *
  * Los tipos de tarea que van a Goose efímero son los "especialistas":
- *   web_search, data_analysis, content_generation, code_execution, custom
+ *   web_search, data_analysis, content_generation, image_prompt, custom
  *
  * Los tipos que quedan en agentes persistentes:
  *   mission_analysis (Squad Lead), auditor_review (Auditor), human_input
+ *
+ * NOTA: code_execution se removió — HQ genera contenido, no software.
  */
 
 import Task, { ITask, TaskType } from '../models/Task.js'
@@ -23,6 +25,10 @@ import { dockerService } from './docker.service.js'
 import { taskEventsService } from './task-events.service.js'
 import { agentScoringService } from './agent-scoring.service.js'
 import Agent from '../models/Agent.js'
+import { Attachment } from '../models/Attachment.js'
+import { Resource } from '../models/Resource.js'
+import { fileManagementService } from './file-management.service.js'
+import path from 'path'
 
 // Tipos de tarea que ejecutan los especialistas (Goose efímero)
 const SPECIALIST_TASK_TYPES: TaskType[] = [
@@ -30,7 +36,6 @@ const SPECIALIST_TASK_TYPES: TaskType[] = [
   'data_analysis',
   'content_generation',
   'image_prompt',
-  'code_execution',
   'custom',
 ]
 
@@ -84,8 +89,9 @@ class TaskDispatcherService {
       // en vez de early access) porque el plan del Squad Lead resume.
       const mission = await Mission.findById(task.missionId).lean()
 
-      // 3. Construir el prompt: personalidad + brief completo + tarea
-      const prompt = this.buildSpecialistPrompt(task, agent, mission)
+      // 3. Construir el prompt: personalidad + brief completo + adjuntos + tarea
+      const attachmentsContext = await this.buildAttachmentsContext(String(task.missionId))
+      const prompt = this.buildSpecialistPrompt(task, agent, mission, attachmentsContext)
       const model = agent?.llmModel || undefined
 
       // 4. Ejecutar en Goose efímero
@@ -141,7 +147,67 @@ class TaskDispatcherService {
    *
    * Goose recibe todo por stdin como un prompt plano.
    */
-  private buildSpecialistPrompt(task: ITask, agent: any, mission?: any): string {
+  /**
+   * Construir la sección de contexto con los archivos que el usuario subió a
+   * la misión (📎 en la UI). Antes quedaban guardados en disco sin que ningún
+   * agente los viera; ahora son material fuente del brief.
+   *
+   * Los archivos de texto (txt/md/csv/json/código) se incluyen inline con
+   * límite de tamaño; los binarios (PDF, imágenes, xlsx) se listan para que
+   * el agente sepa que existen y pueda marcar [DATO: …] en su lugar.
+   */
+  private async buildAttachmentsContext(missionId: string): Promise<string> {
+    try {
+      const attachments = await Attachment.find({ missionId, type: 'mission_input' })
+        .sort({ order: 1 }).lean()
+      if (!attachments.length) return ''
+
+      const resources = await Resource.find({
+        resourceId: { $in: attachments.map(a => a.resourceId) },
+      }).lean()
+      const byResourceId = new Map(resources.map(r => [String(r.resourceId), r]))
+
+      const MAX_FILES = 4
+      const MAX_CHARS = 6000
+      let section = `# Archivos adjuntados por el usuario (fuente primaria del negocio)\n`
+      let included = 0
+
+      for (const att of attachments) {
+        const res: any = byResourceId.get(String(att.resourceId))
+        if (!res) continue
+        const mime = String(res.mimeType || '')
+        const name = res.originalName || res.filename || 'archivo'
+        const isText = mime.startsWith('text/') ||
+          ['application/json', 'application/xml', 'application/javascript',
+           'application/x-typescript'].includes(mime)
+
+        if (isText && included < MAX_FILES) {
+          try {
+            const buffer = await fileManagementService.getInputFile(
+              missionId, path.basename(res.filePath))
+            let content = buffer.toString('utf-8')
+            if (content.length > MAX_CHARS) {
+              content = content.slice(0, MAX_CHARS) + '\n…[truncado]'
+            }
+            section += `\n## ${name}\n\`\`\`\n${content}\n\`\`\`\n`
+            included++
+          } catch {
+            section += `\n## ${name}\n[no se pudo leer el archivo]\n`
+          }
+        } else {
+          section += `\n## ${name} (${mime || 'binario'})\n[adjunto no legible como texto — usa [DATO: …] donde su contenido sea necesario]\n`
+        }
+      }
+
+      section += `\n**REGLA:** los datos de estos archivos son la fuente primaria del negocio; no los inventes ni los contradigas.\n\n`
+      return section
+    } catch (err: any) {
+      console.warn(`[dispatcher] attachments context failed: ${err.message}`)
+      return ''
+    }
+  }
+
+  private buildSpecialistPrompt(task: ITask, agent: any, mission?: any, attachmentsContext?: string): string {
     const personality = agent?.personality ||
       'You are a helpful AI assistant. Respond in Spanish.'
 
@@ -182,6 +248,11 @@ class TaskDispatcherService {
 3. EMOJIS. Máximo 2 en toda la pieza, usados con moderación como firma de la marca — nunca decorando cada línea. Si la marca no define sus emojis, deja placeholders [EMOJI FIRMA] donde aporten.
 4. LA PREGUNTA REAL. Cada pieza debe responder qué hay EN ESTE lugar que justifica que el cliente vaya hasta allí (su producto concreto, su razón de viaje), no describir atmósferas que valdrían para cualquier bar de la ciudad.
 5. HASHTAGS. Solo ultra-locales (barrio, ciudad, zona). Sin hashtags masivos o genéricos (#CraftBeer #SaturdayVibes #GastroBar): traen alcance de gente que nunca irá.\n\n`
+    }
+
+    // Material fuente adjuntado por el usuario (post-brief: refuerza el brief)
+    if (attachmentsContext) {
+      prompt += attachmentsContext
     }
 
     prompt += `# Tarea: ${task.title}\n\n`

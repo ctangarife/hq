@@ -105,7 +105,16 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/missions - Create mission
 router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { title, description, objective, priority, squadIds, workspaceId: bodyWsId } = req.body
+    // El brief completo (context, audience, tone, …) viene del enriquecedor
+    // y del formulario extendido: antes sólo se persistían title/description/
+    // objective y el resto se descartaba silenciosamente — el Squad Lead
+    // recibía un brief vacío en el flujo de creación normal.
+    const {
+      title, description, objective, priority, squadIds,
+      context, audience, tone, deliverableFormat, successCriteria, constraints,
+      missionType, templateId,
+      workspaceId: bodyWsId,
+    } = req.body
 
     // Aislamiento: asignar el workspace del usuario automáticamente.
     // super_admin puede especificar cualquier workspaceId vía body.
@@ -122,6 +131,14 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
       status: 'draft',
       taskIds: [],
       workspaceId: wsId,
+      missionType,
+      templateId,
+      context,
+      audience,
+      tone,
+      deliverableFormat,
+      successCriteria,
+      constraints,
     })
 
     const saved = await mission.save()

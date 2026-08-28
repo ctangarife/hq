@@ -73,14 +73,14 @@ When analyzing a mission, always respond with a valid JSON plan following this s
       "dependencies": [],
       "priority": "high|medium|low",
       "estimatedDuration": minutes,
-      "assignedAgentRole": "researcher|developer|writer|analyst"
+      "assignedAgentRole": "researcher|designer|writer|analyst"
     }
   ],
   "agents": [
     {
       "id": "agent-1",
       "name": "Agent name",
-      "role": "researcher|developer|writer|analyst",
+      "role": "researcher|designer|writer|analyst",
       "template": "template_id",
       "capabilities": ["capability1", "capability2"]
     }
@@ -119,32 +119,6 @@ Your capabilities:
 - Evaluate source credibility
 
 Always provide sources and methodology for your research.`,
-    isReusable: true
-  },
-
-  developer: {
-    id: 'developer',
-    name: 'Developer',
-    role: 'developer',
-    defaultLlmModel: 'kimi-k3',
-    defaultProvider: 'zai',
-    capabilities: [
-      'code_execution',
-      'code_review',
-      'debugging',
-      'code_generation',
-      'testing'
-    ],
-    personality: `You are a Developer AI agent specialized in writing, reviewing, and executing code.
-
-Your capabilities:
-- Write clean, well-documented code
-- Review code for bugs and improvements
-- Debug issues and propose solutions
-- Generate code from specifications
-- Create and run tests
-
-Follow best practices for security, performance, and maintainability.`,
     isReusable: true
   },
 
@@ -284,7 +258,7 @@ When you have completed analysis, respond with ONLY a JSON object (no markdown, 
 {
   "decision": "reassign|refine|escalate_human|retry",
   "reason": "Brief explanation of why you chose this action",
-  "suggestedAgentRole": "researcher|developer|writer|analyst|null",  // Only for reassign
+  "suggestedAgentRole": "researcher|designer|writer|analyst|null",  // Only for reassign
   "refinedDescription": "Clear task description",  // Only for refine
   "questionForHuman": "What information do you need?"  // Only for escalate_human
 }

@@ -40,10 +40,10 @@ const PLAN_FALLBACK = `Formato del plan JSON (descripciones de UNA línea):
   "complexity": "low|medium|high|critical",
   "summary": "una línea",
   "tasks": [
-    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|image_prompt|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|designer|writer|analyst"}
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|image_prompt|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|designer|writer|analyst"}
   ],
   "agents": [
-    {"id": "agent-1", "name": "...", "role": "researcher|developer|designer|writer|analyst", "capabilities": ["una"]}
+    {"id": "agent-1", "name": "...", "role": "researcher|designer|writer|analyst", "capabilities": ["una"]}
   ]
 }
 
@@ -235,9 +235,11 @@ Descripción: ${task.description || ''}
 
 Plantillas de agentes disponibles:
 - researcher: web_search, data_analysis, fact_checking
-- developer: code_execution, code_review, debugging
 - writer: content_generation, editing, documentation
 - analyst: data_analysis, statistics, reporting
+- designer: image_prompt, dirección visual
+
+REGLA IMPORTANTE: HQ genera CONTENIDO (posts, reportes, análisis, guiones), NO software. NUNCA planees tareas de programación, desarrollo de features ni type code_execution — eso no es ejecutable por el equipo.
 
 DEBES crear un plan JSON ahora. NO hagas preguntas.
 
@@ -340,10 +342,10 @@ descripciones de UNA línea:
   "complexity": "low|medium|high|critical",
   "summary": "una línea",
   "tasks": [
-    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|code_execution|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|developer|writer|analyst"}
+    {"id": "task-1", "title": "...", "description": "una línea", "type": "web_search|data_analysis|content_generation|custom", "dependencies": [], "priority": "high|medium|low", "assignedAgentRole": "researcher|designer|writer|analyst"}
   ],
   "agents": [
-    {"id": "agent-1", "name": "...", "role": "researcher|developer|writer|analyst", "capabilities": ["una"]}
+    {"id": "agent-1", "name": "...", "role": "researcher|designer|writer|analyst", "capabilities": ["una"]}
   ]
 }`;
 

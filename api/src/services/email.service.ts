@@ -114,6 +114,11 @@ export async function sendEmail(params: {
   subject: string
   html: string
   text?: string
+  attachments?: Array<{
+    filename: string
+    content: Buffer
+    contentType: string
+  }>
 }): Promise<void> {
   await getTransporter().sendMail({
     from: `"HQ" <${SMTP_FROM}>`,
@@ -121,5 +126,10 @@ export async function sendEmail(params: {
     subject: params.subject,
     html: params.html,
     text: params.text || '',
+    attachments: params.attachments?.map(a => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })),
   })
 }

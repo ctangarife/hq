@@ -10,14 +10,14 @@ const consolidatingId = ref<string | null>(null)
 <script setup lang="ts">
 // ref viene del bloque script superior (ámbito compartido del módulo)
 import { onMounted } from 'vue'
-import { missionsService, tasksService, attachmentsService, resourcesService, templatesService, default as api } from '@/services/api'
+import { missionsService, tasksService, attachmentsService, resourcesService, default as api } from '@/services/api'
 import MissionControlPanel from '@/components/MissionControlPanel.vue'
 import FileUploader from '@/components/FileUploader.vue'
 import TaskDependencyGraph from '@/components/TaskDependencyGraph.vue'
 import AvatarImage from '@/components/AvatarImage.vue'
 import { getStyleForRole as getAvatarStyle } from '@/composables/useAgentAvatar'
 
-type MissionType = 'AUTO_ORCHESTRATED' | 'TEMPLATE_BASED' | 'MANUAL'
+type MissionType = 'AUTO_ORCHESTRATED' | 'MANUAL'
 
 interface Mission {
   _id: string
@@ -112,10 +112,6 @@ const createdMissionId = ref<string | null>(null)  // NEW: Store created mission
 const squadLeadPlan = ref<MissionPlan | null>(null)  // NEW: Store Squad Lead's plan
 const showAdditionalContext = ref(false)  // NEW: Toggle for additional context section
 
-// Phase 10.2: Mission Templates
-const templates = ref<any[]>([])
-const selectedTemplate = ref<any>(null)
-const loadingTemplates = ref(false)
 
 // Form data
 const formData = ref<{
@@ -175,27 +171,6 @@ const fetchMissions = async () => {
   }
 }
 
-// Close create modal and reset form
-const closeCreateModal = () => {
-  showCreateModal.value = false
-  // Reset form data
-  formData.value = {
-    title: '',
-    description: '',
-    objective: '',
-    missionType: 'AUTO_ORCHESTRATED',
-    autoOrchestrate: false,
-    templateId: undefined,
-    context: '',
-    audience: '',
-    deliverableFormat: '',
-    successCriteria: '',
-    constraints: '',
-    tone: ''
-  }
-  selectedTemplate.value = null
-  showAdditionalContext.value = false
-}
 
 // Open edit modal for a mission
 const openEditModal = (mission: Mission) => {
@@ -261,12 +236,6 @@ const openDependencyGraphModal = (missionId: string) => {
 
 // Create mission
 const createMission = async () => {
-  // Phase 10.2: If template-based, use template flow
-  if (formData.value.missionType === 'TEMPLATE_BASED') {
-    await createMissionFromTemplate()
-    return
-  }
-
   try {
     submitting.value = true
 
@@ -286,11 +255,6 @@ const createMission = async () => {
     if (formData.value.successCriteria) missionData.successCriteria = formData.value.successCriteria
     if (formData.value.constraints) missionData.constraints = formData.value.constraints
     if (formData.value.tone) missionData.tone = formData.value.tone
-
-    // For template-based missions, include template ID
-    if ((formData.value.missionType as MissionType) === 'TEMPLATE_BASED' && formData.value.templateId) {
-      missionData.templateId = formData.value.templateId
-    }
 
     const response = await missionsService.create(missionData)
 
@@ -577,80 +541,6 @@ const fetchHumanTasks = async () => {
   }
 }
 
-// Phase 10.2: Mission Templates
-const fetchTemplates = async () => {
-  try {
-    loadingTemplates.value = true
-    const response = await templatesService.getAll()
-    templates.value = response.data
-  } catch (err) {
-    console.error('Error fetching templates:', err)
-  } finally {
-    loadingTemplates.value = false
-  }
-}
-
-const selectTemplate = (template: any) => {
-  selectedTemplate.value = template
-  formData.value.templateId = template.templateId
-
-  // Pre-fill ALL form fields with template defaults
-  formData.value.title = template.defaultTitle || ''
-  formData.value.description = template.defaultDescription || ''
-  formData.value.objective = template.defaultObjective || ''
-  formData.value.context = template.context || ''
-  formData.value.audience = template.audience || ''
-  formData.value.deliverableFormat = template.deliverableFormat || ''
-  formData.value.successCriteria = template.successCriteria || ''
-  formData.value.constraints = template.constraints || ''
-  formData.value.tone = template.tone || ''
-}
-
-const createMissionFromTemplate = async () => {
-  if (!selectedTemplate.value) return
-
-  try {
-    submitting.value = true
-
-    // Create mission from template (with placeholders)
-    const response = await templatesService.createMission(
-      selectedTemplate.value.templateId,
-      {} // Empty params - user edits form values directly
-    )
-
-    const missionId = response.data.mission._id
-
-    // Immediately update the mission with form data (replacing placeholders)
-    await missionsService.update(missionId, {
-      title: formData.value.title,
-      description: formData.value.description,
-      objective: formData.value.objective,
-      context: formData.value.context,
-      audience: formData.value.audience,
-      deliverableFormat: formData.value.deliverableFormat,
-      successCriteria: formData.value.successCriteria,
-      constraints: formData.value.constraints,
-      tone: formData.value.tone
-    })
-
-    await fetchMissions()
-    closeCreateModal()
-
-    // Ask if user wants to orchestrate immediately
-    const shouldOrchestrate = confirm(
-      '✅ Misión creada desde plantilla.\n\n¿Deseas iniciar la orquestación automática ahora?'
-    )
-    if (shouldOrchestrate) {
-      await orchestrateMission(missionId)
-    }
-  } catch (err) {
-    console.error('Error creating mission from template:', err)
-    alert('Error al crear misión desde plantilla')
-  } finally {
-    submitting.value = false
-  }
-}
-
 // Get human task for a mission
 const getHumanTaskForMission = (mission: Mission) => {
   if (!mission.awaitingHumanTaskId) return null
@@ -752,7 +642,6 @@ const submitHumanResponse = async () => {
 onMounted(() => {
   fetchMissions()
   fetchHumanTasks()
-  fetchTemplates()  // Phase 10.2: Load templates
 })
 </script>
 
@@ -1154,7 +1043,7 @@ onMounted(() => {
           <!-- Mission Type Selector -->
           <div>
             <label class="block text-gray-400 text-sm mb-2">Tipo de Misión *</label>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 @click="formData.missionType = 'AUTO_ORCHESTRATED'"
@@ -1168,21 +1057,6 @@ onMounted(() => {
                 <div class="text-2xl mb-1">🤖</div>
                 <div class="text-xs font-medium">Auto Orquestada</div>
                 <div class="text-[10px] text-gray-500 mt-1">Squad Lead decide todo</div>
-              </button>
-
-              <button
-                type="button"
-                @click="formData.missionType = 'TEMPLATE_BASED'"
-                :class="[
-                  'p-3 rounded-lg border-2 transition text-center',
-                  formData.missionType === 'TEMPLATE_BASED'
-                    ? 'bg-purple-600/20 border-purple-500 text-purple-300'
-                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
-                ]"
-              >
-                <div class="text-2xl mb-1">📋</div>
-                <div class="text-xs font-medium">Plantilla</div>
-                <div class="text-[10px] text-gray-500 mt-1">Usa plantilla predefinida</div>
               </button>
 
               <button
@@ -1202,47 +1076,6 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Phase 10.2: Template Selector (shown when TEMPLATE_BASED is selected) -->
-          <div v-if="formData.missionType === 'TEMPLATE_BASED'" class="mt-4">
-            <label class="block text-gray-400 text-sm mb-2">Seleccionar Plantilla *</label>
-            <div v-if="loadingTemplates" class="text-gray-500 text-sm py-4 text-center">
-              Cargando plantillas...
-            </div>
-            <div v-else-if="templates.length === 0" class="text-gray-500 text-sm py-4 text-center">
-              No hay plantillas disponibles
-            </div>
-            <div v-else class="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-2">
-              <div
-                v-for="template in templates"
-                :key="template.templateId"
-                @click="selectTemplate(template)"
-                :class="[
-                  'p-3 rounded-lg border-2 cursor-pointer transition',
-                  selectedTemplate?.templateId === template.templateId
-                    ? 'bg-blue-600/20 border-blue-500'
-                    : 'bg-gray-700 border-gray-600 hover:border-gray-500'
-                ]"
-              >
-                <div class="flex items-start gap-2">
-                  <span class="text-xl">{{ template.icon }}</span>
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium text-white truncate">{{ template.name }}</div>
-                    <div class="text-xs text-gray-400 truncate">{{ template.description }}</div>
-                    <div class="flex flex-wrap gap-1 mt-2">
-                      <span
-                        v-for="tag in template.tags.slice(0, 2)"
-                        :key="tag"
-                        class="text-[10px] px-1.5 py-0.5 bg-gray-600 rounded text-gray-300"
-                      >
-                        {{ tag }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Auto-Orchestrate Checkbox (only for AUTO_ORCHESTRATED type) -->
           <div v-if="formData.missionType === 'AUTO_ORCHESTRATED'" class="flex items-center gap-2 p-3 bg-purple-900/20 border border-purple-700 rounded-lg">
             <input
@@ -1255,14 +1088,6 @@ onMounted(() => {
               <span class="font-medium">🚀 Iniciar orquestación automática</span>
               <span class="text-gray-500 block text-xs mt-1">El Squad Lead analizará la misión y generará un plan que podrás revisar antes de ejecutar</span>
             </label>
-          </div>
-
-          <!-- Info for TEMPLATE_BASED -->
-          <div v-if="formData.missionType === 'TEMPLATE_BASED'" class="p-3 bg-blue-900/20 border border-blue-700 rounded-lg">
-            <p class="text-blue-300 text-sm">
-              📋 <strong>Modo Plantilla:</strong> Selecciona una plantilla predefinida para crear la misión rápidamente.
-              <span class="text-yellow-400 block mt-1">* Próximamente: Selección de plantillas disponibles</span>
-            </p>
           </div>
 
           <!-- Info for MANUAL -->

@@ -175,6 +175,30 @@ Priority: ${mission.priority}
     enhancedDescription += `\nCommunication Tone: ${mission.tone}`
   }
 
+  // Material fuente adjuntado por el usuario (📎): el Squad Lead planifica
+  // sabiendo qué información real está disponible para los especialistas
+  try {
+    const { Attachment } = await import('../models/Attachment.js')
+    const { Resource } = await import('../models/Resource.js')
+    const atts = await (Attachment as any).find({ missionId, type: 'mission_input' })
+      .sort({ order: 1 }).lean()
+    if (atts.length > 0) {
+      const resources = await (Resource as any).find({
+        resourceId: { $in: atts.map((a: any) => a.resourceId) },
+      }).lean()
+      const names = resources.map((r: any) => {
+        const mime = String(r.mimeType || '')
+        const isText = mime.startsWith('text/') ||
+          ['application/json', 'application/xml', 'application/javascript',
+           'application/x-typescript'].includes(mime)
+        return `- ${r.originalName || r.filename} (${isText ? 'texto completo disponible para los agentes' : 'binario: solo referencia'})`
+      })
+      enhancedDescription += `\n\nUser-attached source files (the specialists will receive the text content):\n${names.join('\n')}`
+    }
+  } catch (err: any) {
+    console.warn(`[orchestration] attachments lookup failed: ${err.message}`)
+  }
+
   enhancedDescription += `
 
 Available Agent Templates:
