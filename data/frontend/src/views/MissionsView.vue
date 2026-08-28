@@ -111,7 +111,11 @@ const selectedMission = ref<Mission | null>(null)
 const editingMission = ref<Mission | null>(null)  // NEW: Mission being edited
 const selectedHumanTask = ref<HumanTask | null>(null)
 const dependencyMissionId = ref<string | null>(null)  // Phase 12.1: Mission ID for DAG view
-const authToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') || 'hq-agent-token' : 'hq-agent-token'
+// JWT en 'hq_token' (login). Antes leía 'token' — key inexistente desde la
+// migración a JWT-only — y el DAG recibía 401 en sus 4 fetches → vacío.
+const authToken = typeof localStorage !== 'undefined'
+  ? localStorage.getItem('hq_token') || ''
+  : ''
 const missionTasks = ref<any[]>([])
 const orchestrationLog = ref<any[]>([])
 const humanResponse = ref('')
