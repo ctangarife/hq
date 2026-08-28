@@ -5,6 +5,9 @@ export interface IActivity extends Document {
   message: string
   details?: Record<string, any>
   timestamp: Date
+  // Multi-tenant: eventos sin workspaceId son de sistema (orquestador
+  // global) y no se muestran a usuarios de workspace
+  workspaceId?: mongoose.Types.ObjectId
 }
 
 const activitySchema = new Schema<IActivity>({
@@ -15,7 +18,8 @@ const activitySchema = new Schema<IActivity>({
   },
   message: { type: String, required: true },
   details: { type: Schema.Types.Mixed },
-  timestamp: { type: Date, default: Date.now }
+  timestamp: { type: Date, default: Date.now },
+  workspaceId: { type: Schema.Types.ObjectId, ref: 'Workspace', index: true }
 })
 
 // TTL index: activities expire after 30 days

@@ -1,13 +1,21 @@
 import { Router } from 'express'
 import Activity from '../models/Activity.js'
+import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
 
 const router = Router()
 
 // GET /api/activity - List recent activities
-router.get('/', async (req, res, next) => {
+// Aislamiento multi-tenant: los usuarios de workspace solo ven los eventos
+// de SU workspace. Los eventos sin workspaceId son de sistema (orquestador
+// global) y quedan reservados al super_admin.
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50
-    const activities = await Activity.find()
+    const filter = req.user?.role === 'super_admin'
+      ? {}
+      : { workspaceId: req.user?.workspaceId }
+
+    const activities = await Activity.find(filter)
       .sort({ timestamp: -1 })
       .limit(limit)
     res.json(activities)

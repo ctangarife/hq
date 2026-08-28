@@ -189,7 +189,7 @@ router.put('/:id', async (req, res, next) => {
         ? task.completedAt.getTime() - new Date(task.startedAt).getTime()
         : undefined
 
-      await activityLog.taskCompleted(task.title, duration, task._id.toString())
+      await activityLog.taskCompleted(task.title, duration, task._id.toString(), String(task.missionId))
     }
 
     res.json(task)
@@ -400,7 +400,7 @@ router.post('/:id/fail', async (req, res, next) => {
     }
 
     // Log activity
-    await activityLog.taskFailed(task.title, errorMessage, task._id.toString())
+    await activityLog.taskFailed(task.title, errorMessage, task._id.toString(), String(task.missionId))
 
     // Check if task needs audit (reached max retries)
     const needsAudit = task.retryCount >= task.maxRetries && !task.auditorReviewId

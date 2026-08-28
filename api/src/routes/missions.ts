@@ -8,6 +8,8 @@ import {
 import { activityLog } from '../services/activity-logger.service.js'
 import { fileManagementService } from '../services/file-management.service.js'
 import { litellmService } from '../services/litellm.service.js'
+import Workspace from '../models/Workspace.js'
+import Agent from '../models/Agent.js'
 import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
 import { getMissionFilter, getWorkspaceScope } from '../middleware/workspace-filter.js'
 
@@ -81,6 +83,69 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
       .sort({ createdAt: -1 })
 
     res.json(missions)
+  } catch (error) {
+    next(error)
+  }
+})
+
+// GET /api/missions/dashboard-stats - Métricas del dashboard con scope de workspace
+//
+// Usuario de workspace: métricas de SU workspace (misiones/tareas/agentes).
+// super_admin: métricas globales + desglose por workspace (la vista que
+// antes no existía: cada tenant con sus propios números).
+router.get('/dashboard-stats', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const scope = getWorkspaceScope(req)
+
+    const statsForWorkspace = async (wsId?: string) => {
+      const missionFilter = wsId ? { workspaceId: wsId } : {}
+      const missions = await Mission.find(missionFilter).select('_id status').lean()
+      // Task.missionId se guarda como string — mapear a string para que el $in matchee
+      const missionIds = missions.map(m => m._id.toString())
+
+      const taskAgg = await Task.aggregate([
+        { $match: { missionId: { $in: missionIds } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ])
+      const byStatus: Record<string, number> = {}
+      for (const a of taskAgg) byStatus[a._id] = a.count
+
+      // Agentes globales (sin workspace) + los del workspace — mismo criterio
+      // de visibilidad que GET /api/agents
+      const agentFilter = wsId
+        ? { $or: [{ workspaceId: wsId }, { workspaceId: { $exists: false } }] }
+        : {}
+      const activeAgents = await Agent.countDocuments({ ...agentFilter, status: 'active' })
+
+      return {
+        totalMissions: missions.length,
+        activeMissions: missions.filter(m => m.status === 'active').length,
+        completedMissions: missions.filter(m => m.status === 'completed').length,
+        pendingTasks: byStatus.pending || 0,
+        inProgressTasks: byStatus.in_progress || 0,
+        completedTasks: byStatus.completed || 0,
+        failedTasks: byStatus.failed || 0,
+        activeAgents,
+      }
+    }
+
+    if (scope.isGlobal) {
+      const overall = await statsForWorkspace(undefined)
+      const workspaces = await Workspace.find().select('name members').lean()
+      const breakdown = []
+      for (const ws of workspaces) {
+        breakdown.push({
+          workspaceId: ws._id,
+          name: ws.name,
+          members: (ws.members || []).length,
+          ...(await statsForWorkspace(ws._id.toString())),
+        })
+      }
+      return res.json({ scope: 'global', ...overall, workspaces: breakdown })
+    }
+
+    const stats = await statsForWorkspace(scope.workspaceId || undefined)
+    res.json({ scope: 'workspace', workspaceId: scope.workspaceId, ...stats })
   } catch (error) {
     next(error)
   }

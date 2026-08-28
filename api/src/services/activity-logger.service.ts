@@ -4,6 +4,7 @@
  */
 
 import Activity from '../models/Activity.js'
+import Mission from '../models/Mission.js'
 
 export type ActivityType = 'mission' | 'task' | 'agent' | 'container'
 
@@ -11,17 +12,37 @@ interface LogOptions {
   type: ActivityType
   message: string
   details?: Record<string, any>
+  workspaceId?: string
 }
 
+const isValidObjectId = (v: unknown): v is string =>
+  typeof v === 'string' && /^[0-9a-f]{24}$/.test(v)
+
 /**
- * Log an activity event
+ * Log an activity event.
+ *
+ * El workspaceId se resuelve en este orden:
+ * 1. El que venga explícito en options.workspaceId
+ * 2. details.missionId → misión → workspace (eventos de misión/tarea)
+ * Sin workspace queda como evento de sistema (invisible para tenants).
  */
 export async function logActivity(options: LogOptions): Promise<void> {
   try {
+    let workspaceId = options.workspaceId
+
+    if (!workspaceId) {
+      const mid = (options.details as any)?.missionId
+      if (isValidObjectId(mid)) {
+        const mission = await Mission.findById(mid).select('workspaceId').lean()
+        workspaceId = mission?.workspaceId?.toString()
+      }
+    }
+
     const activity = new Activity({
       type: options.type,
       message: options.message,
-      details: options.details
+      details: options.details,
+      workspaceId: workspaceId || undefined
     })
     await activity.save()
   } catch (error) {
@@ -92,18 +113,18 @@ export const activityLog = {
       details: { taskId, taskTitle, changes, action: 'updated' }
     }),
 
-  taskCompleted: (taskTitle: string, duration?: number, taskId: string) =>
+  taskCompleted: (taskTitle: string, duration: number | undefined, taskId: string, missionId?: string) =>
     logActivity({
       type: 'task',
       message: `Tarea "${taskTitle}" completada${duration ? ` (${Math.round(duration / 1000)}s)` : ''}`,
-      details: { taskId, taskTitle, duration, action: 'completed' }
+      details: { taskId, taskTitle, duration, missionId, action: 'completed' }
     }),
 
-  taskFailed: (taskTitle: string, error?: string, taskId: string) =>
+  taskFailed: (taskTitle: string, error: string | undefined, taskId: string, missionId?: string) =>
     logActivity({
       type: 'task',
       message: `Tarea "${taskTitle}" fallida`,
-      details: { taskId, taskTitle, error, action: 'failed' }
+      details: { taskId, taskTitle, error, missionId, action: 'failed' }
     }),
 
   taskDeleted: (taskTitle: string, taskId: string) =>
@@ -113,11 +134,11 @@ export const activityLog = {
       details: { taskId, taskTitle, action: 'deleted' }
     }),
 
-  taskAssigned: (taskTitle: string, agentName: string, taskId: string) =>
+  taskAssigned: (taskTitle: string, agentName: string, taskId: string, missionId?: string) =>
     logActivity({
       type: 'task',
       message: `Tarea "${taskTitle}" asignada a ${agentName}`,
-      details: { taskId, taskTitle, agentName, action: 'assigned' }
+      details: { taskId, taskTitle, agentName, missionId, action: 'assigned' }
     }),
 
   // Mission activities

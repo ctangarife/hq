@@ -1,15 +1,37 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { missionsService, agentsService, tasksService, activityService } from '@/services/api'
+import { missionsService, activityService } from '@/services/api'
 
-// Dashboard data
+interface WorkspaceStats {
+  workspaceId: string
+  name: string
+  members: number
+  totalMissions: number
+  activeMissions: number
+  completedMissions: number
+  pendingTasks: number
+  inProgressTasks: number
+  completedTasks: number
+  failedTasks: number
+  activeAgents: number
+}
+
+// Dashboard data — viene del backend con scope de workspace:
+// el usuario de workspace ve SUS números, el super_admin ve los globales
+// + desglose por workspace
 const stats = ref({
+  totalMissions: 0,
   activeMissions: 0,
-  activeAgents: 0,
+  completedMissions: 0,
   pendingTasks: 0,
-  completedTasks: 0
+  inProgressTasks: 0,
+  completedTasks: 0,
+  failedTasks: 0,
+  activeAgents: 0,
 })
+const isGlobalScope = ref(false)
+const workspaceBreakdown = ref<WorkspaceStats[]>([])
 
 const recentActivity = ref<Array<{ id: string; message: string; timestamp: Date }>>([])
 const loading = ref(true)
@@ -17,29 +39,30 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    // Fetch all data in parallel
-    const [missionsRes, agentsRes, tasksRes, activityRes] = await Promise.all([
-      missionsService.getAll().catch(() => ({ data: [] })),
-      agentsService.getAll().catch(() => ({ data: [] })),
-      tasksService.getAll().catch(() => ({ data: [] })),
-      activityService.getAll().catch(() => ({ data: [] }))
+    // El endpoint de stats ya viene filtrado por workspace (aislamiento
+    // server-side); la actividad también (GET /api/activity aplica el filtro)
+    const [statsRes, activityRes] = await Promise.all([
+      missionsService.dashboardStats().catch(() => null),
+      activityService.getAll().catch(() => ({ data: [] })),
     ])
 
-    // Calculate stats
-    const missions = missionsRes.data || []
-    const agents = agentsRes.data || []
-    const tasks = tasksRes.data || []
-    const activities = activityRes.data || []
-
-    stats.value = {
-      activeMissions: missions.filter((m: any) => m.status === 'active').length,
-      activeAgents: agents.filter((a: any) => a.status === 'active').length,
-      pendingTasks: tasks.filter((t: any) => t.status === 'pending' || t.status === 'in_progress').length,
-      completedTasks: tasks.filter((t: any) => t.status === 'completed').length
+    if (statsRes?.data) {
+      const d = statsRes.data
+      stats.value = {
+        totalMissions: d.totalMissions || 0,
+        activeMissions: d.activeMissions || 0,
+        completedMissions: d.completedMissions || 0,
+        pendingTasks: d.pendingTasks || 0,
+        inProgressTasks: d.inProgressTasks || 0,
+        completedTasks: d.completedTasks || 0,
+        failedTasks: d.failedTasks || 0,
+        activeAgents: d.activeAgents || 0,
+      }
+      isGlobalScope.value = d.scope === 'global'
+      workspaceBreakdown.value = d.workspaces || []
     }
 
-    // Get recent activity (last 5)
-    recentActivity.value = activities
+    recentActivity.value = (activityRes.data || [])
       .slice(0, 5)
       .map((a: any) => ({
         id: a._id || a.id,
@@ -60,7 +83,9 @@ onMounted(async () => {
     <!-- Header -->
     <header class="mb-8">
       <h1 class="text-3xl font-bold text-white">HQ Dashboard</h1>
-      <p class="text-gray-400 mt-1">AI Agent Headquarters</p>
+      <p class="text-gray-400 mt-1">
+        {{ isGlobalScope ? 'Vista global — todos los workspaces' : 'AI Agent Headquarters' }}
+      </p>
     </header>
 
     <!-- Loading State -->
@@ -76,7 +101,7 @@ onMounted(async () => {
     <!-- Dashboard Content -->
     <template v-else>
       <!-- Welcome card for new users (no missions) -->
-      <div v-if="stats.activeMissions === 0 && stats.completedTasks === 0" class="mb-8 bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-700/40 rounded-2xl p-6">
+      <div v-if="stats.totalMissions === 0 && stats.completedTasks === 0" class="mb-8 bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-700/40 rounded-2xl p-6">
         <div class="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h2 class="text-xl font-bold text-white">👋 ¡Bienvenido a HQ!</h2>
@@ -106,10 +131,14 @@ onMounted(async () => {
       </div>
 
       <!-- Stats Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <p class="text-gray-400 text-sm">Misiones Activas</p>
           <p class="text-3xl font-bold text-blue-400">{{ stats.activeMissions }}</p>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <p class="text-gray-400 text-sm">Misiones Completadas</p>
+          <p class="text-3xl font-bold text-cyan-400">{{ stats.completedMissions }}</p>
         </div>
         <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <p class="text-gray-400 text-sm">Agentes Activos</p>
@@ -120,8 +149,52 @@ onMounted(async () => {
           <p class="text-3xl font-bold text-yellow-400">{{ stats.pendingTasks }}</p>
         </div>
         <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <p class="text-gray-400 text-sm">Tareas En Curso</p>
+          <p class="text-3xl font-bold text-orange-400">{{ stats.inProgressTasks }}</p>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <p class="text-gray-400 text-sm">Tareas Completadas</p>
           <p class="text-3xl font-bold text-purple-400">{{ stats.completedTasks }}</p>
+        </div>
+      </div>
+
+      <!-- Per-workspace breakdown (solo super_admin) -->
+      <div v-if="isGlobalScope && workspaceBreakdown.length > 0" class="bg-gray-800 rounded-lg border border-gray-700 mb-8">
+        <div class="p-4 border-b border-gray-700 flex items-center justify-between">
+          <h2 class="text-xl font-semibold">Métricas por Workspace</h2>
+          <span class="text-xs text-gray-500">{{ workspaceBreakdown.length }} workspaces</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-400 border-b border-gray-700">
+                <th class="px-4 py-3 font-medium">Workspace</th>
+                <th class="px-4 py-3 font-medium text-center">Miembros</th>
+                <th class="px-4 py-3 font-medium text-center">Misiones</th>
+                <th class="px-4 py-3 font-medium text-center">Activas</th>
+                <th class="px-4 py-3 font-medium text-center">Completadas</th>
+                <th class="px-4 py-3 font-medium text-center">Tareas ✓</th>
+                <th class="px-4 py-3 font-medium text-center">Tareas ✗</th>
+                <th class="px-4 py-3 font-medium text-center">Agentes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="ws in workspaceBreakdown"
+                :key="ws.workspaceId"
+                class="border-b border-gray-700/50 hover:bg-gray-700/30 transition"
+              >
+                <td class="px-4 py-3 font-medium text-white">{{ ws.name }}</td>
+                <td class="px-4 py-3 text-center text-gray-300">{{ ws.members }}</td>
+                <td class="px-4 py-3 text-center text-gray-300">{{ ws.totalMissions }}</td>
+                <td class="px-4 py-3 text-center text-blue-400">{{ ws.activeMissions }}</td>
+                <td class="px-4 py-3 text-center text-cyan-400">{{ ws.completedMissions }}</td>
+                <td class="px-4 py-3 text-center text-purple-400">{{ ws.completedTasks }}</td>
+                <td class="px-4 py-3 text-center text-red-400">{{ ws.failedTasks }}</td>
+                <td class="px-4 py-3 text-center text-green-400">{{ ws.activeAgents }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
