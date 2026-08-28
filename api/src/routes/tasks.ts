@@ -97,15 +97,25 @@ router.get('/', async (req: any, res, next) => {
     if (assignedTo) filter.assignedTo = assignedTo
 
     // Aislamiento: si el usuario NO es super_admin, solo ver tareas
-    // de misiones de SU workspace
+    // de misiones de SU workspace. INTERSECTAR con el filtro de misión
+    // pedido — antes este bloque lo sobreescribía y ?missionId= era
+    // ignorado (la vista de tareas de una misión mostraba TODO el workspace).
     const user = req.user
     if (user && user.role !== 'super_admin' && user.workspaceId) {
       const MissionModel = (await import('../models/Mission.js')).default
-      const myMissionIds = await MissionModel
+      const myMissionIds = (await MissionModel
         .find({ workspaceId: user.workspaceId })
         .select('_id')
-        .lean()
-      filter.missionId = { $in: myMissionIds.map(m => m._id.toString()) }
+        .lean()).map(m => m._id.toString())
+
+      if (missionId) {
+        // La misión pedida debe pertenecer al workspace; si no, sin resultados
+        filter.missionId = myMissionIds.includes(String(missionId))
+          ? String(missionId)
+          : { $in: [] }
+      } else {
+        filter.missionId = { $in: myMissionIds }
+      }
     }
 
     const tasks = await Task.find(filter)

@@ -54,7 +54,11 @@ const manualAuditSubmitting = ref(false)  // NEW: Estado de envío de auditoría
 // Phase 8: Streaming output
 const streamingTaskId = ref<string | null>(null)  // Tarea cuyo output se está mostrando en tiempo real
 const showOutputStream = ref(false)  // Mostrar/ocultar el panel de output stream
-const authToken = typeof localStorage !== 'undefined' ? localStorage.getItem('token') || 'hq-agent-token' : 'hq-agent-token'
+// JWT en 'hq_token' (mismo bug que tuvo el DAG: la key 'token' no existe
+// desde la migración a JWT-only y el SSE de tareas caía en 401)
+const authToken = typeof localStorage !== 'undefined'
+  ? localStorage.getItem('hq_token') || ''
+  : ''
 
 // SSE connection
 let taskEventSource: EventSource | null = null
