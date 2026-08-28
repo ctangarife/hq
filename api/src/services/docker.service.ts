@@ -167,6 +167,35 @@ export class DockerService {
    * @param options.timeoutMs - timeout del container (default: 5 min)
    * @returns el output del modelo (texto limpio de stdout)
    */
+  /**
+   * Garantizar la red dedicada de los efímeros.
+   *
+   * Aislamiento: los efímeros corren en su PROPIA red bridge (egress a
+   * internet por NAT — necesario para que el researcher navegue y alcance
+   * litellm.ctangarife.com) pero SIN pertenecer a hq-network, de modo que
+   * mongodb, la API y el resto de servicios internos no son alcanzables por
+   * nombre y la superficie de pivote ante un prompt injection se reduce a
+   * "internet saliente".
+   */
+  private ephemeralNetworkName = 'hq-ephemerals'
+  private async ensureEphemeralNetwork(): Promise<string> {
+    const name = process.env.EPHEMERAL_NETWORK || this.ephemeralNetworkName
+    try {
+      const net = docker.getNetwork(name)
+      await net.inspect()
+    } catch {
+      await docker.createNetwork({
+        Name: name,
+        Driver: 'bridge',
+        // Internal: false — los efímeros necesitan salir a internet (LLM + web)
+        Internal: false,
+        Labels: { 'hq-managed': 'true' },
+      })
+      console.log(`[ephemeral] created dedicated network ${name}`)
+    }
+    return name
+  }
+
   async runEphemeralTask(
     prompt: string,
     options: {
@@ -176,7 +205,7 @@ export class DockerService {
     } = {},
   ): Promise<string> {
     const image = process.env.HQ_AGENT_GOOSE_IMAGE || 'hq-agent-goose:latest'
-    const network = process.env.AGENT_NETWORK || 'hq-network'
+    const network = await this.ensureEphemeralNetwork()
 
     // 1. Resolver la virtual key desde MongoDB (no desde .env)
     const virtualKey = await litellmService.getKey(options.workspaceId)
@@ -211,6 +240,13 @@ export class DockerService {
       HostConfig: {
         AutoRemove: false,
         NetworkMode: network,
+        // Endurecimiento: un efímero comprometido (p. ej. por prompt
+        // injection) no debe poder consumir la VPS ni escalar privilegios
+        Memory: 512 * 1024 * 1024,          // 512 MB
+        MemorySwap: 512 * 1024 * 1024,      // sin swap
+        NanoCpus: 1_000_000_000,            // 1 CPU
+        PidsLimit: 128,                     // anti fork-bomb
+        SecurityOpt: ['no-new-privileges'],
       },
       Labels: {
         'hq-managed': 'true',
