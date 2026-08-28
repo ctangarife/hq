@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import {
   workspacesService,
+  missionsService,
   promptsService,
   llmConfigService,
   authService,
@@ -25,23 +26,25 @@ interface Workspace {
   avatarStyle?: string;
   active: boolean;
 }
-interface Project {
-  _id: string;
-  name: string;
-  slug: string;
-  description?: string;
-  status: string;
-}
-
 const workspaces = ref<Workspace[]>([]);
 const workspacesLoading = ref(true);
 const expandedWs = ref<string | null>(null);
-const wsProjects = ref<Record<string, Project[]>>({});
+// Misiones reales del workspace (los "proyectos" nunca se usaron: las
+// misiones cuelgan directo del workspace — la sección decía "sin proyectos"
+// aunque el workspace tuviera misiones)
+const allMissions = ref<any[]>([]);
+
+const missionsOf = (wsId: string) =>
+  allMissions.value.filter(m => (m.workspaceId?._id || m.workspaceId) === wsId);
+
+const missionStatusChip = (status: string): string => ({
+  completed: 'bg-green-900/60 text-green-300',
+  active: 'bg-yellow-900/60 text-yellow-300',
+  paused: 'bg-orange-900/60 text-orange-300',
+  draft: 'bg-gray-700 text-gray-300',
+}[status] || 'bg-gray-700 text-gray-300')
 const showWsModal = ref(false);
-const showProjectModal = ref(false);
-const projectTargetWs = ref<string>("");
 const wsForm = ref({ name: "", slug: "", description: "", ownerId: "admin" });
-const projectForm = ref({ name: "", slug: "", description: "" });
 const submitting = ref(false);
 
 async function fetchWorkspaces() {
@@ -63,26 +66,11 @@ async function toggleExpand(wsId: string) {
     return;
   }
   expandedWs.value = wsId;
-  if (!wsProjects.value[wsId]) {
-    try {
-      const res = await workspacesService.getProjects(wsId);
-      wsProjects.value[wsId] = res.data;
-    } catch (err: any) {
-      console.error(err);
-      wsProjects.value[wsId] = [];
-    }
-  }
 }
 
 function openWsModal() {
   wsForm.value = { name: "", slug: "", description: "", ownerId: "admin" };
   showWsModal.value = true;
-}
-
-function openProjectModal(wsId: string) {
-  projectTargetWs.value = wsId;
-  projectForm.value = { name: "", slug: "", description: "" };
-  showProjectModal.value = true;
 }
 
 async function submitWorkspace() {
@@ -94,24 +82,6 @@ async function submitWorkspace() {
   } catch (err: any) {
     const msg = err.response?.data?.error || err.message || "Unknown error";
     alert("Error creando workspace: " + msg);
-  } finally {
-    submitting.value = false;
-  }
-}
-
-async function submitProject() {
-  try {
-    submitting.value = true;
-    await workspacesService.createProject(projectTargetWs.value, {
-      ...projectForm.value,
-    });
-    showProjectModal.value = false;
-    // Refrescar proyectos del workspace
-    const res = await workspacesService.getProjects(projectTargetWs.value);
-    wsProjects.value[projectTargetWs.value] = res.data;
-  } catch (err: any) {
-    const msg = err.response?.data?.error || err.message || "Unknown error";
-    alert("Error creando proyecto: " + msg);
   } finally {
     submitting.value = false;
   }
@@ -433,6 +403,10 @@ onMounted(() => {
   fetchWorkspaces();
   fetchPrompts();
   fetchLlmConfigs();
+  // Misiones agrupadas por workspace para la sección de detalle
+  missionsService.getAll()
+    .then(res => { allMissions.value = res.data || [] })
+    .catch(err => console.error('Error fetching missions:', err))
 });
 </script>
 
@@ -529,30 +503,33 @@ onMounted(() => {
             <div class="p-4">
               <div class="flex justify-between items-center mb-3">
                 <h4 class="text-sm font-medium text-gray-300 uppercase">
-                  Proyectos
+                  Misiones ({{ missionsOf(ws._id).length }})
                 </h4>
-                <button
-                  @click="openProjectModal(ws._id)"
-                  class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
-                >
-                  + Proyecto
-                </button>
               </div>
 
-              <div v-if="wsProjects[ws._id]?.length === 0" class="text-gray-500 text-sm py-2">
-                Sin proyectos todavía.
+              <div v-if="missionsOf(ws._id).length === 0" class="text-gray-500 text-sm py-2">
+                Sin misiones todavía.
               </div>
 
-              <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <div v-else class="space-y-2">
                 <div
-                  v-for="proj in wsProjects[ws._id] || []"
-                  :key="proj._id"
-                  class="bg-gray-800 rounded p-3 border border-gray-700"
+                  v-for="mission in missionsOf(ws._id)"
+                  :key="mission._id"
+                  class="bg-gray-800 rounded p-3 border border-gray-700 flex items-start justify-between gap-3"
                 >
-                  <div class="font-medium text-white text-sm">{{ proj.name }}</div>
-                  <div class="text-gray-500 text-xs font-mono">{{ proj.slug }}</div>
-                  <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-300">
-                    {{ proj.status }}
+                  <div class="min-w-0">
+                    <div class="text-white text-sm font-medium truncate" :title="mission.title">
+                      {{ mission.title }}
+                    </div>
+                    <div class="text-gray-500 text-xs mt-0.5">
+                      {{ new Date(mission.createdAt).toLocaleDateString() }} ·
+                      {{ (mission.taskIds || []).length }} tareas
+                    </div>
+                  </div>
+                  <span
+                    :class="['px-2 py-0.5 rounded text-xs shrink-0', missionStatusChip(mission.status)]"
+                  >
+                    {{ mission.status }}
                   </span>
                 </div>
               </div>
@@ -868,64 +845,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- ====================================================================
-         MODAL: Crear Proyecto
-         ==================================================================== -->
-    <div
-      v-if="showProjectModal"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-700">
-        <h2 class="text-xl font-bold text-white mb-4">Crear Proyecto</h2>
-        <form @submit.prevent="submitProject()" class="space-y-3">
-          <div>
-            <label class="block text-gray-400 text-sm mb-1">Nombre *</label>
-            <input
-              v-model="projectForm.name"
-              type="text"
-              required
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-              placeholder="Campaña Café Q3"
-            />
-          </div>
-          <div>
-            <label class="block text-gray-400 text-sm mb-1">Slug *</label>
-            <input
-              v-model="projectForm.slug"
-              type="text"
-              required
-              pattern="[a-z0-9-]+"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white font-mono"
-              placeholder="campana-cafe-q3"
-            />
-          </div>
-          <div>
-            <label class="block text-gray-400 text-sm mb-1">Descripción</label>
-            <textarea
-              v-model="projectForm.description"
-              rows="2"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-            ></textarea>
-          </div>
-          <div class="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              @click="showProjectModal = false"
-              class="px-4 py-2 text-gray-400"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              :disabled="submitting"
-              class="px-4 py-2 bg-blue-600 text-white rounded"
-            >
-              {{ submitting ? "Creando..." : "Crear" }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+
 
     <!-- ====================================================================
          MODAL: Editor de Prompts (con preview de variables)
