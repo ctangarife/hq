@@ -24,8 +24,8 @@ import { authMiddleware } from '../middleware/auth.js'
 /**
  * Construir la app Express de test.
  *
- * Auth: acepta cualquier Bearer token o x-ui-secret, igual que el middleware
- * de prod (authMiddleware). Los tests pasan el header que quieran.
+ * Auth: usa el MISMO middleware JWT-only de prod (authMiddleware). Los tests
+ * deben firmar un JWT válido con API_JWT_SECRET — ver smoke-flow.test.ts.
  */
 export function buildTestApp() {
   const app = express()

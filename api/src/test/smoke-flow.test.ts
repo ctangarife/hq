@@ -26,6 +26,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import mongoose from 'mongoose'
 import request from 'supertest'
+import jwt from 'jsonwebtoken'
 
 // Mocks DEBEN ir antes de importar la app (Vitest los aplica al módulo)
 // Importamos el mock factory para poder espiar las llamadas.
@@ -56,8 +57,25 @@ import Task from '../models/Task.js'
 
 const app = buildTestApp()
 
-// Header de auth (el middleware acepta cualquier Bearer no-vacío)
-const AUTH = { Authorization: 'Bearer test-token' }
+// Auth: el middleware de prod verifica JWT firmado con API_JWT_SECRET.
+// Firmamos un token de test con el MISMO secret del entorno (valor por
+// defecto si el env no lo define) — desde la migración a JWT-only el
+// bearer fake 'test-token' da 401.
+const TEST_JWT_SECRET = process.env.API_JWT_SECRET || 'hq-dev-secret-change-in-prod'
+const AUTH = {
+  Authorization:
+    'Bearer ' +
+    jwt.sign(
+      {
+        userId: 'test-user-id',
+        email: 'test@hq.local',
+        name: 'Test Runner',
+        role: 'super_admin',
+      },
+      TEST_JWT_SECRET,
+      { expiresIn: '1h' },
+    ),
+}
 
 // Mongo URI de test (DB aislada, no toca la de prod `hq`)
 const MONGO_TEST_URI =
