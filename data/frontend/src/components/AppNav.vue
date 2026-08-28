@@ -11,7 +11,6 @@ const navItems = [
   { path: '/agents', name: 'Agentes', icon: '🤖' },
   { path: '/tasks', name: 'Tareas', icon: '✓' },
   { path: '/activity', name: 'Actividad', icon: '📡' },
-  { path: '/providers', name: 'Providers', icon: '⚙️' },
   { path: '/admin', name: 'Admin', icon: '🛠️' }
 ]
 const isActive = (path: string) => {

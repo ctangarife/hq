@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
-import { agentsService, providersService } from "@/services/api";
+import { ref, onMounted } from "vue";
+import { agentsService } from "@/services/api";
 import AgentLogsViewer from "@/components/AgentLogsViewer.vue";
 import AgentMetricsDashboard from "@/components/AgentMetricsDashboard.vue";
 import AvatarImage from "@/components/AvatarImage.vue";
@@ -12,27 +12,8 @@ interface Agent {
   role: string;
   personality?: string;
   llmModel?: string;
-  provider?: string;
-  apiKey?: string;
   containerId?: string;
   status: string;
-}
-
-interface Provider {
-  _id: string;
-  providerId: string;
-  name: string;
-  type: string;
-  enabled: boolean;
-  apiEndpoint?: string;
-  defaultModel?: string;
-}
-
-interface Model {
-  id: string;
-  name: string;
-  description?: string;
-  contextLength?: number;
 }
 
 const agents = ref<Agent[]>([]);
@@ -45,18 +26,11 @@ const selectedAgentForLogs = ref<Agent | null>(null);
 const editingAgent = ref<Agent | null>(null);
 const submitting = ref(false);
 
-// Providers and models
-const providers = ref<Provider[]>([]);
-const providerModels = ref<Model[]>([]);
-const loadingModels = ref(false);
-
 const formData = ref({
   name: "",
   role: "Developer",
   personality: "",
-  provider: "",
   llmModel: "",
-  apiKey: "",
 });
 
 async function fetchAgents() {
@@ -71,67 +45,17 @@ async function fetchAgents() {
   }
 }
 
-async function fetchEnabledProviders() {
-  try {
-    const response = await providersService.getAll();
-    providers.value = response.data.filter((p: Provider) => p.enabled);
-  } catch (err) {
-    console.error("Failed to fetch providers:", err);
-  }
-}
-
-async function fetchProviderModels(providerId: string) {
-  if (!providerId) {
-    providerModels.value = [];
-    return;
-  }
-
-  try {
-    loadingModels.value = true;
-    const response = await providersService.getModels(providerId, false);
-    providerModels.value = response.data.models;
-
-    // Set default model if current one is not in list
-    if (providerModels.value.length > 0 && !providerModels.value.find(m => m.id === formData.value.llmModel)) {
-      const provider = providers.value.find(p => p.providerId === providerId);
-      formData.value.llmModel = provider?.defaultModel || providerModels.value[0].id;
-    }
-  } catch (err) {
-    console.error("Failed to fetch models:", err);
-    providerModels.value = [];
-  } finally {
-    loadingModels.value = false;
-  }
-}
-
-// Watch provider changes to fetch models
-watch(() => formData.value.provider, (newProvider) => {
-  if (newProvider) {
-    fetchProviderModels(newProvider);
-  } else {
-    providerModels.value = [];
-    formData.value.llmModel = "";
-  }
-});
-
 function resetForm() {
   formData.value = {
     name: "",
     role: "Developer",
     personality: "",
-    provider: "",
     llmModel: "",
-    apiKey: "",
   };
-  providerModels.value = [];
 }
 
 function openCreateModal() {
   resetForm();
-  // Set first provider as default
-  if (providers.value.length > 0) {
-    formData.value.provider = providers.value[0].providerId;
-  }
   showCreateModal.value = true;
 }
 
@@ -141,14 +65,8 @@ function openEditModal(agent: Agent) {
     name: agent.name,
     role: agent.role,
     personality: agent.personality || "",
-    provider: agent.provider || "",
     llmModel: agent.llmModel || "",
-    apiKey: agent.apiKey || "",
   };
-  // Fetch models for this agent's provider
-  if (agent.provider) {
-    fetchProviderModels(agent.provider);
-  }
   showEditModal.value = true;
 }
 
@@ -169,9 +87,7 @@ async function createAgent() {
       name: formData.value.name,
       role: formData.value.role,
       personality: formData.value.personality,
-      llmModel: formData.value.llmModel,
-      provider: formData.value.provider,
-      apiKey: formData.value.apiKey || undefined,
+      llmModel: formData.value.llmModel || undefined,
     });
     showCreateModal.value = false;
     resetForm();
@@ -194,9 +110,7 @@ async function updateAgent() {
       name: formData.value.name,
       role: formData.value.role,
       personality: formData.value.personality,
-      llmModel: formData.value.llmModel,
-      provider: formData.value.provider,
-      apiKey: formData.value.apiKey || undefined,
+      llmModel: formData.value.llmModel || undefined,
     });
 
     // Show message if container was auto-recreated
@@ -250,7 +164,6 @@ async function destroyContainer(id: string) {
 
 onMounted(() => {
   fetchAgents();
-  fetchEnabledProviders();
 });
 </script>
 
@@ -268,9 +181,7 @@ onMounted(() => {
         </button>
         <button
           @click="openCreateModal()"
-          :disabled="providers.length === 0"
-          class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600 disabled:cursor-not-allowed"
-          :title="providers.length === 0 ? 'Enable a provider first' : ''"
+          class="px-4 py-2 bg-green-600 text-white rounded"
         >
           + New Agent
         </button>
@@ -279,11 +190,9 @@ onMounted(() => {
 
     <div v-if="loading" class="text-center py-12 text-gray-400">Loading...</div>
 
-    <div v-else-if="providers.length === 0" class="text-center py-12 bg-gray-800 rounded-lg border border-gray-700">
-      <p class="text-gray-400 mb-4">No providers enabled. Enable a provider first to create agents.</p>
-      <router-link to="/providers" class="px-4 py-2 bg-blue-600 text-white rounded">
-        Go to Providers
-      </router-link>
+    <div v-else-if="agents.length === 0" class="text-center py-12 bg-gray-800 rounded-lg border border-gray-700">
+      <p class="text-gray-400 mb-2">No hay agentes aún.</p>
+      <p class="text-gray-500 text-sm">Los agentes se crean automáticamente al lanzar una misión, o puede crear uno manualmente.</p>
     </div>
 
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -314,7 +223,6 @@ onMounted(() => {
         </p>
 
         <div class="text-sm text-gray-500 mb-4">
-          <div>Provider: <span class="text-gray-300">{{ agent.provider || "N/A" }}</span></div>
           <div>Model: <span class="text-gray-300">{{ agent.llmModel || "N/A" }}</span></div>
         </div>
 
@@ -395,33 +303,13 @@ onMounted(() => {
           </div>
 
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Provider *</label>
-            <select
-              v-model="formData.provider"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-              required
-            >
-              <option value="">Select a provider</option>
-              <option v-for="provider in providers" :key="provider.providerId" :value="provider.providerId">
-                {{ provider.name }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="formData.provider">
-            <label class="block text-gray-400 text-sm mb-1">Model *</label>
-            <select
+            <label class="block text-gray-400 text-sm mb-1">Modelo (opcional)</label>
+            <input
               v-model="formData.llmModel"
-              :disabled="loadingModels"
+              type="text"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-              required
-            >
-              <option value="">Select a model</option>
-              <option v-for="model in providerModels" :key="model.id" :value="model.id">
-                {{ model.name }}
-              </option>
-            </select>
-            <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading models...</p>
+              placeholder="Se asigna por rol vía LiteLLM si se deja vacío"
+            />
           </div>
 
           <div>
@@ -443,7 +331,7 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              :disabled="submitting || !formData.llmModel"
+              :disabled="submitting"
               class="px-4 py-2 bg-green-600 text-white rounded disabled:bg-gray-600"
             >
               {{ submitting ? "Creating..." : "Create" }}
@@ -460,10 +348,6 @@ onMounted(() => {
     >
       <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md border border-gray-700">
         <h2 class="text-xl font-bold text-white mb-4">Edit Agent</h2>
-        <p class="text-gray-400 text-sm mb-4">
-          Container will be auto-recreated when model/provider changes.
-          <span class="text-gray-500">Use "Destroy" button for manual control.</span>
-        </p>
         <form @submit.prevent="updateAgent()" class="space-y-4">
           <div>
             <label class="block text-gray-400 text-sm mb-1">Name *</label>
@@ -491,33 +375,13 @@ onMounted(() => {
           </div>
 
           <div>
-            <label class="block text-gray-400 text-sm mb-1">Provider *</label>
-            <select
-              v-model="formData.provider"
-              class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-              required
-            >
-              <option value="">Select a provider</option>
-              <option v-for="provider in providers" :key="provider.providerId" :value="provider.providerId">
-                {{ provider.name }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="formData.provider">
-            <label class="block text-gray-400 text-sm mb-1">Model *</label>
-            <select
+            <label class="block text-gray-400 text-sm mb-1">Modelo (opcional)</label>
+            <input
               v-model="formData.llmModel"
-              :disabled="loadingModels"
+              type="text"
               class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-              required
-            >
-              <option value="">Select a model</option>
-              <option v-for="model in providerModels" :key="model.id" :value="model.id">
-                {{ model.name }}
-              </option>
-            </select>
-            <p v-if="loadingModels" class="text-xs text-gray-500 mt-1">Loading models...</p>
+              placeholder="Se asigna por rol vía LiteLLM si se deja vacío"
+            />
           </div>
 
           <div>
@@ -542,7 +406,7 @@ onMounted(() => {
             </button>
             <button
               type="submit"
-              :disabled="submitting || !formData.llmModel"
+              :disabled="submitting"
               class="px-4 py-2 bg-purple-600 text-white rounded disabled:bg-gray-600"
             >
               {{ submitting ? "Saving..." : "Save" }}

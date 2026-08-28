@@ -47,6 +47,7 @@ let app: Application | null = null
 let mapContainer: Container | null = null
 let floorContainer: Container | null = null
 let furnitureContainer: Container | null = null
+let bgGraphics: Graphics | null = null
 const robotSprites = new Map<string, AgentAvatarSprite>()
 
 // Vida ambiental: overlays de zona (hover), scheduler zZz
@@ -123,15 +124,9 @@ async function initPixi() {
   canvasContainer.value.appendChild(app.canvas)
 
   // Fondo ambiental: gradiente vertical sutil (cielo del bar) detrás del piso
-  const bgGradient = new FillGradient(0, 0, 0, app.canvas.height)
-  bgGradient.addColorStop(0, 0x111C33)   // arriba: azul noche
-  bgGradient.addColorStop(0.65, 0x0D1526)
-  bgGradient.addColorStop(1, 0x080D18)   // abajo: más oscuro (viñeta)
-  const bg = new Graphics()
-  bg.beginPath()
-  bg.rect(0, 0, app.canvas.width, app.canvas.height)
-  bg.fill(bgGradient)
-  app.stage.addChild(bg)
+  bgGraphics = new Graphics()
+  app.stage.addChild(bgGraphics)
+  drawBackground()
 
   mapContainer = new Container()
   mapContainer.x = app.canvas.width / 2
@@ -158,6 +153,22 @@ async function initPixi() {
   updateAgentSprites()
 
   mapContainer.scale.set(0.8)
+}
+
+/**
+ * Fondo ambiental redibujable: gradiente vertical sutil (cielo del bar)
+ * detrás del piso. Se redibuja en cada resize para cubrir el canvas completo.
+ */
+function drawBackground() {
+  if (!app || !bgGraphics) return
+  const bgGradient = new FillGradient(0, 0, 0, app.canvas.height)
+  bgGradient.addColorStop(0, 0x111C33)   // arriba: azul noche
+  bgGradient.addColorStop(0.65, 0x0D1526)
+  bgGradient.addColorStop(1, 0x080D18)   // abajo: más oscuro (viñeta)
+  bgGraphics.clear()
+  bgGraphics.beginPath()
+  bgGraphics.rect(0, 0, app.canvas.width, app.canvas.height)
+  bgGraphics.fill(bgGradient)
 }
 
 /**
@@ -547,10 +558,12 @@ function updateAgentSprites() {
 function handleResize() {
   if (!app || !canvasContainer.value) return
 
-  app.renderer.resize(
-    canvasContainer.value.clientWidth,
-    canvasContainer.value.clientHeight
-  )
+  const w = canvasContainer.value.clientWidth
+  const h = canvasContainer.value.clientHeight
+  if (w === 0 || h === 0) return
+
+  app.renderer.resize(w, h)
+  drawBackground()
 
   if (mapContainer) {
     mapContainer.x = app.canvas.width / 2
@@ -558,19 +571,29 @@ function handleResize() {
   }
 }
 
+// ResizeObserver: cubre window.resize PERO TAMBIÉN el toggle del panel
+// lateral, la aparición de scrollbars clásicas y cambios de devtools —
+// eventos que NO disparan window.resize y dejaban el canvas con ancho
+// viejo (causaba overflow horizontal en pantallas pequeñas)
+let resizeObserver: ResizeObserver | null = null
+
 watch(() => [props.agents, props.tasks], () => {
   updateAgentSprites()
 }, { deep: true })
 
 onMounted(async () => {
   await initPixi()
-  window.addEventListener('resize', handleResize)
+  if (canvasContainer.value) {
+    resizeObserver = new ResizeObserver(() => handleResize())
+    resizeObserver.observe(canvasContainer.value)
+  }
   // Vida ambiental: respiración de zonas + scheduler zZz
   Ticker.shared.add(ambientTick)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   Ticker.shared.remove(ambientTick)
 
   robotSprites.forEach(sprite => sprite.destroy())

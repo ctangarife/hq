@@ -94,18 +94,6 @@ export const modelsService = {
   getModelInfo: (providerId: string, modelId: string) => api.get(`/models/${providerId}/${modelId}`)
 }
 
-export const providersService = {
-  getAll: () => api.get('/providers'),
-  getEnabled: () => api.get('/providers/enabled'),
-  create: (data: any) => api.post('/providers', data),
-  update: (providerId: string, data: any) => api.put(`/providers/${providerId}`, data),
-  delete: (providerId: string) => api.delete(`/providers/${providerId}`),
-  toggle: (providerId: string, enabled: boolean, apiKey?: string) =>
-    api.post(`/providers/${providerId}/toggle`, apiKey ? { enabled, apiKey } : { enabled }),
-  getModels: (providerId: string, refresh?: boolean) => api.get(`/providers/${providerId}/models${refresh ? '?refresh=true' : ''}`),
-  refreshAll: () => api.post('/providers/refresh-all')
-}
-
 export const activityService = {
   getAll: () => api.get('/activity'),  // Note: api base URL already includes /api prefix
   subscribe: () => new EventSource(`${API_URL}/activity/stream`)

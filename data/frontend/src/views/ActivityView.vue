@@ -367,9 +367,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="activity-view h-screen flex">
+  <!-- El nav superior mide 64px + 1px de border = 65px; así la vista ocupa
+       exactamente el viewport restante sin scrollbar vertical (que en
+       pantallas 13" con scrollbar clásica restaba ancho y desplazaba el
+       contenido hacia la derecha) -->
+  <div class="activity-view h-[calc(100vh-65px)] flex overflow-hidden">
     <!-- Mapa Isométrico — protagonista, pantalla completa -->
-    <div class="flex-1 relative">
+    <div class="flex-1 relative min-w-0">
       <IsometricMap
         ref="isoMapRef"
         :agents="mapAgents"
@@ -446,7 +450,7 @@ onUnmounted(() => {
     <!-- Panel Lateral: Timeline moderna -->
     <div
       v-if="showActivityLog"
-      class="w-96 bg-slate-900 border-l border-slate-700/60 flex flex-col"
+      class="w-96 shrink-0 bg-slate-900 border-l border-slate-700/60 flex flex-col"
     >
       <!-- Detalle de agente seleccionado -->
       <div v-if="selectedAgent" class="m-3 p-4 rounded-xl bg-slate-800/80 border border-slate-700/60">

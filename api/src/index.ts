@@ -11,7 +11,6 @@ import missionRoutes from './routes/missions.js'
 import agentRoutes from './routes/agents.js'
 import taskRoutes from './routes/tasks.js'
 import modelsRoutes from './routes/models.js'
-import providersRoutes from './routes/providers.js'
 import activityRoutes from './routes/activity.js'
 import resourcesRoutes from './routes/resources.js'
 import attachmentsRoutes from './routes/attachments.js'
@@ -56,7 +55,6 @@ app.use('/api/missions', missionRoutes)
 app.use('/api/agents', agentRoutes)
 app.use('/api/tasks', taskRoutes)
 app.use('/api/models', modelsRoutes)
-app.use('/api/providers', providersRoutes)
 app.use('/api/activity', activityRoutes)
 app.use('/api/resources', resourcesRoutes)
 app.use('/api/attachments', attachmentsRoutes)
