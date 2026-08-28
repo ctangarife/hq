@@ -72,15 +72,21 @@ class TaskDispatcherService {
     })
 
     try {
-      // 2. Resolver el agente para obtener su personalidad/template
+      // 2. Resolver el agente para obtener su personalidad/template.
+      // assignedTo puede ser un containerId (no-ObjectId) que revienta el
+      // cast — la tarea no debe fallar por eso: se ejecuta sin personalidad.
       let agent: any = null
       if (task.assignedTo) {
-        agent = await Agent.findOne({
-          $or: [
-            { _id: task.assignedTo },
-            { containerId: task.assignedTo },
-          ],
-        }).lean()
+        try {
+          agent = await Agent.findOne({
+            $or: [
+              { _id: task.assignedTo },
+              { containerId: task.assignedTo },
+            ],
+          }).lean()
+        } catch {
+          agent = null
+        }
       }
 
       // 2b. Cargar la misión: el especialista necesita el CONTEXTO COMPLETO
@@ -356,6 +362,7 @@ class TaskDispatcherService {
 - NO incluyas planes de ejecución, análisis previos, listas de tareas, TODOs ni explicaciones de tu proceso.
 - NO delegues la tarea a otro agente: ejecútala tú directamente.
 - NO repitas el enunciado; el entregable empieza de una.
+- PROHIBIDO intentar crear, editar o generar archivos de imagen/audio/video con comandos o código (no hay ImageMagick, ni Python, ni librerías — solo pierdes el tiempo listando comandos). Los entregables visuales son DOCUMENTOS de texto: especificación de layout con medidas, prompts listos para generadores de imágenes (Gemini/Flux/Midjourney) y guías de producción. Jamás escribas código Python/PIL/bash como entregable.
 
 Ejecuta esta tarea y reporta SOLO el resultado final en español.`
 

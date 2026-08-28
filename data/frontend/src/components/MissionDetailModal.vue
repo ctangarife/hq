@@ -230,6 +230,16 @@ const removeAttachment = async (attachmentId: string) => {
 const formatSize = (bytes: number) =>
   bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`
 
+// Errores técnicos → lenguaje humano (el usuario final no sabe qué es un
+// "ephemeral task timeout")
+const friendlyError = (e?: string): string => {
+  if (!e) return 'La tarea falló'
+  if (e.includes('timed out')) return 'El agente agotó su tiempo (10 min) sin terminar — se puede reintentar'
+  if (e.includes('401') || e.includes('Authentication')) return 'Error de autenticación con el modelo'
+  if (e.includes('429')) return 'Límite de uso del modelo alcanzado — reintentar en unos minutos'
+  return e
+}
+
 const logLabels: Record<string, string> = {
   orchestration_started: '🚀 Orquestación iniciada',
   mission_paused: '⏸️ Pausada',
@@ -336,7 +346,7 @@ const logLabels: Record<string, string> = {
             <h3 class="text-xs font-semibold text-red-400 uppercase tracking-wide mb-2">Fallidas ({{ failedTasks.length }})</h3>
             <div v-for="t in failedTasks" :key="t._id" class="bg-red-900/20 border border-red-800/40 rounded-lg p-3">
               <p class="text-white text-sm font-medium">{{ t.title }}</p>
-              <p v-if="t.error || t.output?.error" class="text-red-300 text-xs mt-1">{{ (t.error || t.output?.error || '').slice(0, 200) }}</p>
+              <p v-if="t.error || t.output?.error" class="text-red-300 text-xs mt-1">{{ friendlyError(t.error || t.output?.error) }}</p>
             </div>
           </div>
 

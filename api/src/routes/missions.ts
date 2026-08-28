@@ -691,13 +691,13 @@ router.post('/:id/restart', async (req, res, next) => {
 
     await mission.save()
 
-    // Optionally: Update all associated tasks to cancelled status
-    if (previousTaskIds.length > 0) {
-      await Task.updateMany(
-        { _id: { $in: previousTaskIds } },
-        { status: 'cancelled' }
-      )
-    }
+    // Cancelar TODAS las tareas previas de la misión (por missionId, no solo
+    // taskIds): las fallidas y las completadas de corridas anteriores se
+    // quedaban vivas y ensuciaban el panel "Ahora" con estados viejos.
+    await Task.updateMany(
+      { missionId: mission._id.toString() },
+      { status: 'cancelled' }
+    )
 
     // Log activity
     await activityLog.log({

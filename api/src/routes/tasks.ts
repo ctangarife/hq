@@ -636,9 +636,10 @@ router.post('/:id/retry', async (req, res, next) => {
       return res.status(404).json({ error: 'Task not found' })
     }
 
-    // Verificar si puede ser reintentada
-    if (task.status !== 'failed') {
-      return res.status(400).json({ error: 'Only failed tasks can be retried' })
+    // Verificar si puede ser reintentada: fallidas, o COMPLETADAS cuyo
+    // output se quiere regenerar (ej: entregable contaminado)
+    if (task.status !== 'failed' && task.status !== 'completed') {
+      return res.status(400).json({ error: 'Only failed or completed tasks can be retried' })
     }
 
     if (task.retryCount >= task.maxRetries) {
@@ -659,10 +660,10 @@ router.post('/:id/retry', async (req, res, next) => {
     task.status = 'pending'
     task.error = undefined
 
-    // Si se solicita nuevo agente, remover asignación actual
-    if (forceNewAgent) {
-      task.assignedTo = undefined
-    }
+    // La asignación previa apunta a un container efímero muerto o a un id
+    // del plan que no resuelve a ObjectId — limpiarla SIEMPRE (el dispatcher
+    // reasigna); forceNewAgent queda como no-op documentado.
+    task.assignedTo = undefined
 
     await task.save()
 
