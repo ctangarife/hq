@@ -148,6 +148,57 @@ class TaskDispatcherService {
    * Goose recibe todo por stdin como un prompt plano.
    */
   /**
+   * Describir una imagen adjunta con el modelo de visión del LiteLLM central
+   * (glm-5.3-flash). Los especialistas no ven imágenes — esta descripción
+   * (textos, paleta con hex, composición, tipografías) ES su forma de ver la
+   * referencia visual del cliente.
+   *
+   * Sin credencial configurada o ante cualquier fallo → '' (la imagen se
+   * lista como no legible, comportamiento anterior).
+   */
+  private async describeImageAttachment(name: string, buffer: Buffer): Promise<string> {
+    const url = process.env.VISION_LITELLM_URL || 'https://litellm.ctangarife.com'
+    const key = process.env.VISION_LITELLM_KEY || ''
+    const model = process.env.VISION_MODEL || 'glm-5.3-flash'
+    if (!key) return ''
+
+    try {
+      const resp = await fetch(`${url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(60_000),
+        body: JSON.stringify({
+          model,
+          max_tokens: 800,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${buffer.toString('base64')}` },
+              },
+              {
+                type: 'text',
+                text: `Describe esta imagen de referencia adjunta a una misión de contenido/marketing, para que un diseñador pueda trabajar SIN verla. Responde en español, markdown, máximo 250 palabras: 1) Textos literales que aparezcan (tal cual, con tildes). 2) Paleta de colores con hex aproximados y su rol. 3) Composición y jerarquía visual. 4) Tipografías (estilo y peso). 5) Elementos de marca y estilo general. Sé específico; si algo no se distingue, dilo.`,
+              },
+            ],
+          }],
+        }),
+      })
+      const data: any = await resp.json()
+      if (data.error) throw new Error(String(data.error?.message || data.error))
+      const content = data.choices?.[0]?.message?.content
+      return typeof content === 'string' ? content.trim() : ''
+    } catch (err: any) {
+      console.warn(`[dispatcher] vision description failed for ${name}: ${err.message}`)
+      return ''
+    }
+  }
+
+  /**
    * Construir la sección de contexto con los archivos que el usuario subió a
    * la misión (📎 en la UI). Antes quedaban guardados en disco sin que ningún
    * agente los viera; ahora son material fuente del brief.
@@ -169,6 +220,8 @@ class TaskDispatcherService {
 
       const MAX_FILES = 4
       const MAX_CHARS = 6000
+      const MAX_DESCRIBED_IMAGES = 3
+      let described = 0
       let section = `# Archivos adjuntados por el usuario (fuente primaria del negocio)\n`
       let included = 0
 
@@ -182,6 +235,26 @@ class TaskDispatcherService {
         const isText = mime.startsWith('text/') ||
           ['application/json', 'application/xml', 'application/javascript',
            'application/x-typescript'].includes(mime)
+        const isImage = mime.startsWith('image/')
+
+        // Imágenes de referencia: describirlas con el modelo de visión para
+        // que los especialistas "vean" la referencia del cliente (top 3, ≤5MB)
+        if (isImage && described < MAX_DESCRIBED_IMAGES && mime !== 'image/gif') {
+          try {
+            const imgBuffer = (await fileManagementService.getInputFile(
+              missionId, path.basename(res.filePath))) as Buffer
+            if (imgBuffer.length <= 5 * 1024 * 1024) {
+              const description = await this.describeImageAttachment(name, imgBuffer)
+              if (description) {
+                section += `\n## ${name} (imagen de referencia — descripción automática)\n${description}\n`
+                described++
+                continue
+              }
+            }
+          } catch {
+            // cae al listado genérico
+          }
+        }
 
         if (isText && included < MAX_FILES) {
           try {
