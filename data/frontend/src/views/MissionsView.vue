@@ -11,9 +11,7 @@ const consolidatingId = ref<string | null>(null)
 // ref viene del bloque script superior (ámbito compartido del módulo)
 import { onMounted } from 'vue'
 import { missionsService, tasksService, attachmentsService, resourcesService, default as api } from '@/services/api'
-import MissionControlPanel from '@/components/MissionControlPanel.vue'
-import FileUploader from '@/components/FileUploader.vue'
-import TaskDependencyGraph from '@/components/TaskDependencyGraph.vue'
+import MissionDetailModal from '@/components/MissionDetailModal.vue'
 import AvatarImage from '@/components/AvatarImage.vue'
 import { getStyleForRole as getAvatarStyle } from '@/composables/useAgentAvatar'
 
@@ -73,16 +71,6 @@ interface HumanTask {
   }
 }
 
-interface UploadedFile {
-  attachmentId: string
-  resourceId: string
-  originalName: string
-  mimeType: string
-  size: number
-  type: string
-  order: number
-}
-
 const missions = ref<Mission[]>([])
 const humanTasks = ref<HumanTask[]>([])
 const showCreateModal = ref(false)
@@ -95,13 +83,11 @@ function openCreateModal(mode: 'content' | 'fact_check' = 'content') {
   showCreateModal.value = true
 }
 const showEditModal = ref(false)  // NEW: Edit mission modal
-const showTasksModal = ref(false)
-const showLogModal = ref(false)
+const showMissionDetailModal = ref(false)
 const showHumanResponseModal = ref(false)
-const showControlPanelModal = ref(false)
-const showFilesModal = ref(false)
+
 const showPlanPreviewModal = ref(false)  // NEW: Plan preview before orchestration
-const showDependencyGraphModal = ref(false)  // Phase 12.1: Dependency DAG modal
+
 const loading = ref(true)
 const error = ref<string | null>(null)
 const submitting = ref(false)
@@ -110,16 +96,8 @@ const submittingHumanResponse = ref(false)
 const selectedMission = ref<Mission | null>(null)
 const editingMission = ref<Mission | null>(null)  // NEW: Mission being edited
 const selectedHumanTask = ref<HumanTask | null>(null)
-const dependencyMissionId = ref<string | null>(null)  // Phase 12.1: Mission ID for DAG view
-// JWT en 'hq_token' (login). Antes leía 'token' — key inexistente desde la
-// migración a JWT-only — y el DAG recibía 401 en sus 4 fetches → vacío.
-const authToken = typeof localStorage !== 'undefined'
-  ? localStorage.getItem('hq_token') || ''
-  : ''
-const missionTasks = ref<any[]>([])
-const orchestrationLog = ref<any[]>([])
+
 const humanResponse = ref('')
-const missionAttachments = ref<UploadedFile[]>([])
 const createdMissionId = ref<string | null>(null)  // NEW: Store created mission ID
 const squadLeadPlan = ref<MissionPlan | null>(null)  // NEW: Store Squad Lead's plan
 const showAdditionalContext = ref(false)  // NEW: Toggle for additional context section
@@ -262,12 +240,6 @@ const saveMissionEdit = async () => {
   }
 }
 
-// Phase 12.1: Open dependency graph modal
-const openDependencyGraphModal = (missionId: string) => {
-  dependencyMissionId.value = missionId
-  showDependencyGraphModal.value = true
-}
-
 // Create mission
 const createMission = async () => {
   try {
@@ -352,11 +324,6 @@ const createMission = async () => {
   }
 }
 
-// Phase 12.1: Handle task click from DAG
-const handleTaskClickFromDAG = (node: any) => {
-  console.log('Task clicked from DAG:', node.title)
-  // Could navigate to task details or show more info
-}
 
 // Fetch mission plan from Squad Lead analysis
 const fetchMissionPlan = async (missionId: string) => {
@@ -426,27 +393,6 @@ const orchestrateMission = async (id: string) => {
   } finally {
     orchestrating.value = false
   }
-}
-
-// View mission tasks
-const viewMissionTasks = async (mission: Mission) => {
-  selectedMission.value = mission
-  showTasksModal.value = true
-
-  try {
-    const response = await tasksService.getByMission(mission._id)
-    missionTasks.value = response.data
-  } catch (err) {
-    console.error('Error fetching tasks:', err)
-    missionTasks.value = []
-  }
-}
-
-// View orchestration log
-const viewOrchestrationLog = (mission: Mission) => {
-  selectedMission.value = mission
-  orchestrationLog.value = mission.orchestrationLog || []
-  showLogModal.value = true
 }
 
 // Update mission status
@@ -625,47 +571,7 @@ const openHumanResponseModal = async (mission: Mission) => {
 }
 
 // Open control panel modal
-const openControlPanel = (mission: Mission) => {
-  selectedMission.value = mission
-  showControlPanelModal.value = true
-}
-
 // Open files modal
-const openFilesModal = async (mission: Mission) => {
-  selectedMission.value = mission
-  showFilesModal.value = true
-  await fetchMissionAttachments(mission._id)
-}
-
-// Fetch mission attachments
-const fetchMissionAttachments = async (missionId: string) => {
-  try {
-    const response = await attachmentsService.getByMission(missionId)
-    missionAttachments.value = response.data.attachments || []
-  } catch (err) {
-    console.error('Error fetching attachments:', err)
-    missionAttachments.value = []
-  }
-}
-
-// Handle file uploaded
-const handleFileUploaded = async () => {
-  if (selectedMission.value) {
-    await fetchMissionAttachments(selectedMission.value._id)
-  }
-}
-
-// Handle file removed
-const handleFileRemoved = async (_attachmentId: string) => {
-  if (selectedMission.value) {
-    await fetchMissionAttachments(selectedMission.value._id)
-  }
-}
-
-// Download attachment
-const downloadAttachment = (attachment: UploadedFile) => {
-  attachmentsService.download(attachment.attachmentId)
-}
 
 // Submit human response
 const submitHumanResponse = async () => {
@@ -766,10 +672,10 @@ onMounted(() => {
               <div class="flex items-center gap-2 text-gray-500">
                 <span>📋 {{ mission.orchestrationLog.length }} eventos de orquestación</span>
                 <button
-                  @click="viewOrchestrationLog(mission)"
+                  @click="selectedMission = mission; showMissionDetailModal = true"
                   class="text-blue-400 hover:text-blue-300 underline"
                 >
-                  Ver log
+                  Ver detalle
                 </button>
               </div>
             </div>
@@ -805,13 +711,13 @@ onMounted(() => {
               {{ orchestrating ? 'Orquestando...' : '🚀 Orquestar' }}
             </button>
 
-            <!-- View Tasks Button -->
+            <!-- Mission Detail (tabs: Ahora/Tareas/Archivos/Flujo) -->
             <button
-              @click="viewMissionTasks(mission)"
+              @click="selectedMission = mission; showMissionDetailModal = true"
               class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm transition"
-              title="Ver tareas de la misión"
+              title="Detalle de la misión: progreso en vivo, tareas, archivos y flujo"
             >
-              📋 Tareas
+              📊 Detalle
             </button>
 
             <!-- Edit Button (NEW) -->
@@ -821,24 +727,6 @@ onMounted(() => {
               title="Editar misión"
             >
               ✏️ Editar
-            </button>
-
-            <!-- Files Button -->
-            <button
-              @click="openFilesModal(mission)"
-              class="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-sm transition"
-              title="Archivos de la misión"
-            >
-              📎 Archivos
-            </button>
-
-            <!-- Control Panel Button -->
-            <button
-              @click="openControlPanel(mission)"
-              class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm transition"
-              title="Panel de control de misión"
-            >
-              🎮 Control
             </button>
 
             <!-- Consolidate Button (Phase 8.2) -->
@@ -883,15 +771,6 @@ onMounted(() => {
               title="Reiniciar misión (volver a borrador)"
             >
               🔄 Reiniciar
-            </button>
-
-            <!-- Dependency Graph Button (Phase 12.1) -->
-            <button
-              @click="openDependencyGraphModal(mission._id)"
-              class="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm transition"
-              title="Ver grafo de dependencias"
-            >
-              🔗 DAG
             </button>
 
             <!-- Status Actions -->
@@ -1556,95 +1435,6 @@ onMounted(() => {
     </div>
 
     <!-- Tasks Modal -->
-    <div v-if="showTasksModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-3xl border border-gray-700 max-h-[80vh] overflow-hidden flex flex-col">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-bold text-white">
-            Tareas: {{ selectedMission.title }}
-          </h2>
-          <button
-            @click="showTasksModal = false"
-            class="text-gray-400 hover:text-white"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="overflow-y-auto flex-1">
-          <div v-if="missionTasks.length === 0" class="text-center py-8 text-gray-400">
-            No hay tareas para esta misión
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="task in missionTasks"
-              :key="task._id"
-              class="bg-gray-700 rounded p-3"
-            >
-              <div class="flex justify-between items-start">
-                <div>
-                  <h4 class="text-white font-medium">{{ task.title }}</h4>
-                  <p v-if="task.description" class="text-gray-400 text-sm">{{ task.description }}</p>
-                  <div class="flex gap-2 mt-2 text-xs text-gray-500">
-                    <span class="px-2 py-0.5 rounded bg-gray-600">{{ task.type }}</span>
-                    <span v-if="task.assignedTo" class="px-2 py-0.5 rounded bg-blue-900">
-                      {{ task.agentName || 'Agent' }}
-                    </span>
-                  </div>
-                </div>
-                <span :class="[
-                  'px-2 py-1 rounded text-xs',
-                  task.status === 'completed' ? 'bg-green-900 text-green-400' :
-                  task.status === 'in_progress' ? 'bg-yellow-900 text-yellow-400' :
-                  'bg-gray-600 text-gray-400'
-                ]">
-                  {{ task.status }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Orchestration Log Modal -->
-    <div v-if="showLogModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-700 max-h-[80vh] overflow-hidden flex flex-col">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-bold text-white">
-            Log de Orquestación: {{ selectedMission.title }}
-          </h2>
-          <button
-            @click="showLogModal = false"
-            class="text-gray-400 hover:text-white"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="overflow-y-auto flex-1 font-mono text-sm">
-          <div v-if="orchestrationLog.length === 0" class="text-center py-8 text-gray-400">
-            No hay eventos de orquestación
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="(log, index) in orchestrationLog"
-              :key="index"
-              class="bg-gray-900 rounded p-3"
-            >
-              <div class="text-gray-500 text-xs mb-1">
-                {{ new Date(log.timestamp).toLocaleString() }}
-              </div>
-              <div class="text-purple-400 font-medium">
-                {{ log.action }}
-              </div>
-              <pre class="text-gray-400 text-xs mt-1 overflow-x-auto">{{ JSON.stringify(log.details, null, 2) }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Human Response Modal -->
     <div v-if="showHumanResponseModal && selectedMission && selectedHumanTask" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div class="bg-gray-800 rounded-lg p-6 w-full max-w-2xl border border-gray-700 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
@@ -1696,121 +1486,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Control Panel Modal -->
-    <div v-if="showControlPanelModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div class="bg-gray-800 rounded-lg w-full max-w-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
-        <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
-          <h2 class="text-xl font-bold text-white">Panel de Control: {{ selectedMission.title }}</h2>
-          <button
-            @click="showControlPanelModal = false"
-            class="text-gray-400 hover:text-white text-2xl"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="p-4">
-          <MissionControlPanel
-            v-if="selectedMission"
-            :mission="selectedMission"
-            @refresh="fetchMissions"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Files Modal -->
-    <div v-if="showFilesModal && selectedMission" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div class="bg-gray-800 rounded-lg w-full max-w-3xl border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col">
-        <div class="sticky top-0 bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center">
-          <div>
-            <h2 class="text-xl font-bold text-white">📎 Archivos: {{ selectedMission.title }}</h2>
-            <p class="text-gray-400 text-sm mt-1">Administra los archivos de entrada de la misión</p>
-          </div>
-          <button
-            @click="showFilesModal = false"
-            class="text-gray-400 hover:text-white text-2xl"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="flex-1 overflow-y-auto p-4">
-          <!-- File Uploader -->
-          <FileUploader
-            v-if="selectedMission"
-            :mission-id="selectedMission._id"
-            type="mission_input"
-            :existing-files="missionAttachments"
-            @uploaded="handleFileUploaded"
-            @removed="handleFileRemoved"
-          />
-
-          <!-- Existing Files List -->
-          <div v-if="missionAttachments.length > 0" class="mt-6">
-            <h3 class="text-lg font-semibold text-white mb-3">Archivos Adjuntos</h3>
-            <div class="space-y-2">
-              <div
-                v-for="file in missionAttachments"
-                :key="file.attachmentId"
-                class="flex items-center gap-3 p-3 bg-gray-900 rounded-lg border border-gray-700"
-              >
-                <span class="text-2xl">
-                  {{ file.mimeType.includes('pdf') ? '📄' :
-                     file.mimeType.includes('image') ? '🖼️' :
-                     file.mimeType.includes('excel') ? '📊' :
-                     file.mimeType.includes('code') ? '💻' : '📎' }}
-                </span>
-                <div class="flex-1 min-w-0">
-                  <p class="text-white font-medium truncate">{{ file.originalName }}</p>
-                  <p class="text-gray-500 text-xs">
-                    {{ (file.size / 1024).toFixed(1) }} KB · {{ file.type }}
-                  </p>
-                </div>
-                <button
-                  @click="downloadAttachment(file)"
-                  class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
-                  title="Descargar"
-                >
-                  ⬇️
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Phase 12.1: Dependency Graph Modal -->
-    <div v-if="showDependencyGraphModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div class="bg-gray-800 rounded-lg w-full max-w-5xl border border-gray-700 flex flex-col max-h-[90vh]">
-        <!-- Header -->
-        <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
-          <div>
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-              <span>🔗</span>
-              Grafo de Dependencias
-            </h2>
-            <p class="text-gray-400 text-xs mt-1">Visualización de tareas y sus relaciones</p>
-          </div>
-          <button
-            @click="showDependencyGraphModal = false"
-            class="text-gray-400 hover:text-white text-2xl"
-          >
-            ✕
-          </button>
-        </div>
-
-        <!-- Content -->
-        <div class="p-4 flex-1 overflow-y-auto">
-          <TaskDependencyGraph
-            v-if="dependencyMissionId"
-            :mission-id="dependencyMissionId"
-            :token="authToken"
-            @task-click="handleTaskClickFromDAG"
-          />
-        </div>
-      </div>
-    </div>
+    <!-- Mission Detail Modal (tabs: Ahora/Tareas/Archivos/Flujo) -->
+    <MissionDetailModal
+      v-if="showMissionDetailModal && selectedMission"
+      :mission="selectedMission"
+      @close="showMissionDetailModal = false"
+      @refresh="fetchMissions"
+    />
   </div>
 </template>
