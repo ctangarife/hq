@@ -16,7 +16,9 @@ const router = express.Router()
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB max
+    // Límite uniforme: 3 MB para imágenes y documentos (multer corta el
+    // stream temprano; el handler da el mensaje amigable)
+    fileSize: 3 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
@@ -132,10 +134,29 @@ async function missionAttachmentsBytes(missionId: string): Promise<number> {
 }
 
 /**
+ * Wrapper de multer: traduce sus errores a mensajes amigables en español
+ * (multer corta el stream al superar el límite — el error nunca llega al
+ * handler de la ruta).
+ */
+const uploadFriendly = (req: any, res: any, next: any) => {
+  upload.single('file')(req, res, (err: any) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'El archivo supera el límite de 3 MB. Reduzca la resolución o comprímalo antes de subirlo.'
+      })
+    }
+    if (err) {
+      return res.status(400).json({ error: err.message })
+    }
+    next()
+  })
+}
+
+/**
  * POST /api/attachments/upload
  * Subir archivo y crear Resource + Attachment
  */
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', uploadFriendly, async (req, res) => {
   try {
     const { file } = req
     const { missionId, taskId, type, description, role } = req.body
@@ -150,6 +171,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     // Aislamiento: la misión destino debe ser del workspace del usuario
     if (!(await checkMissionAccess(req as AuthenticatedRequest, res, missionId))) return
+
+    // Límite de peso: 3 MB para imágenes y documentos
+    const MAX_FILE_MB = 3
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      return res.status(400).json({
+        error: `El archivo supera el límite de ${MAX_FILE_MB} MB (pesa ${(file.size / 1024 / 1024).toFixed(1)} MB). Reduzca la resolución o comprímalo antes de subirlo.`
+      })
+    }
 
     // Verificación de contenido real vs MIME declarado (anti-spoofing)
     if (!contentMatchesMime(file.buffer, file.mimetype)) {

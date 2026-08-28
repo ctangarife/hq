@@ -112,11 +112,17 @@ const showAdditionalContext = ref(false)  // NEW: Toggle for additional context 
 const stagedFiles = ref<File[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
+const MAX_STAGE_MB = 3
+
 function handleFileStaging(e: Event) {
   const dt = (e as DragEvent).dataTransfer
   const files = dt ? dt.files : (e.target as HTMLInputElement).files
   if (!files) return
   for (const f of Array.from(files)) {
+    if (f.size > MAX_STAGE_MB * 1024 * 1024) {
+      alert(`"${f.name}" supera el límite de ${MAX_STAGE_MB} MB (${(f.size / 1024 / 1024).toFixed(1)} MB). Reduzca la resolución o comprímalo.`)
+      continue
+    }
     if (!stagedFiles.value.some(s => s.name === f.name && s.size === f.size)) {
       stagedFiles.value.push(f)
     }
@@ -1121,7 +1127,7 @@ const onWsFilterChange = () => { fetchMissions() }
               <p class="text-gray-600 text-xs mt-1">
                 {{ createMode === 'fact_check'
                     ? 'Screenshot o PDF de la noticia, capturas de donde circuló… (txt, pdf, png, jpg)'
-                    : 'Menús, listas de precios, textos de marca… (txt, md, csv, json, pdf, docx, imágenes)' }}
+                    : 'Menús, listas de precios, textos de marca… (txt, md, csv, json, pdf, docx, imágenes) · máx 3 MB' }}
               </p>
               <input
                 ref="fileInputRef"

@@ -412,7 +412,7 @@ const logLabels: Record<string, string> = {
 
         <!-- 📁 ARCHIVOS -->
         <div v-else-if="activeTab === 'files'" class="space-y-4">
-          <FileUploader :mission-id="mission._id" type="mission_input" @uploaded="fetchAttachments" @removed="fetchAttachments" />
+          <FileUploader :mission-id="mission._id" type="mission_input" :max-size="3" @uploaded="fetchAttachments" @removed="fetchAttachments" />
           <div v-if="attachments.length > 0" class="space-y-1.5">
             <div v-for="att in attachments" :key="att.attachmentId"
               class="flex items-center justify-between bg-gray-700/50 rounded-lg px-3 py-2">
@@ -428,7 +428,7 @@ const logLabels: Record<string, string> = {
               </div>
             </div>
           </div>
-          <p class="text-gray-600 text-xs">Los agentes reciben el contenido de estos archivos como fuente primaria del brief.</p>
+          <p class="text-gray-600 text-xs">Máx 3 MB por archivo. Los agentes reciben el contenido de estos archivos como fuente primaria del brief.</p>
         </div>
 
         <!-- 🔀 FLUJO (DAG) -->
