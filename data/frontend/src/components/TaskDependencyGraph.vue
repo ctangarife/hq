@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
 
 interface Props {
   missionId: string
@@ -81,11 +81,26 @@ const loadDAG = async () => {
 
     // Adjust canvas height based on levels
     canvasHeight.value = Math.max(400, ((dag.value?.levels || 0) * levelHeight) + 100)
+
   } catch (err: any) {
     error.value = err.message || 'Error loading dependency graph'
     console.error('Error loading DAG:', err)
   } finally {
     loading.value = false
+    // El canvas está detrás de v-if="!loading" — dibujar cuando exista en el
+    // DOM. Además, medir el ancho real del contenedor: cambiar :width limpia
+    // el bitmap, así que el orden es medir → aplicar → esperar un tick → dibujar.
+    nextTick(() => {
+      const el = document.getElementById('dag-canvas')
+      const parentW = el?.parentElement?.clientWidth || 0
+
+      if (el && parentW > 400 && parentW !== canvasWidth.value) {
+        canvasWidth.value = parentW
+        nextTick(() => drawDAG())
+      } else {
+        drawDAG()
+      }
+    })
   }
 }
 
