@@ -388,8 +388,140 @@ export class FileManagementService {
           .replace(/✅/g, '[OK]')
           .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, '')
 
-        for (const rawLine of lines) {
-          const line = stripInlineMd(rawLine.trimEnd())
+        // ── Render de tablas markdown ──
+        // Antes las filas se imprimían como texto crudo ('| Fuente | Estado |').
+        // Ahora cada bloque de líneas que empiezan con '|' se dibuja como
+        // tabla real: header con fondo, celdas con bordes y texto envuelto.
+        const wrapCellText = (text: string, size: number, maxWidth: number): string[] => {
+          doc.font('Helvetica').fontSize(size)
+          const words = text.split(/\s+/).filter(Boolean)
+          if (!words.length) return ['']
+          const out: string[] = []
+          let current = ''
+          for (const w of words) {
+            const candidate = current ? current + ' ' + w : w
+            if (doc.widthOfString(candidate) <= maxWidth) {
+              current = candidate
+            } else {
+              if (current) out.push(current)
+              current = w
+            }
+          }
+          if (current) out.push(current)
+          return out
+        }
+
+        const renderMarkdownTable = (tableLines: string[]) => {
+          const parseRow = (l: string): string[] =>
+            l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
+
+          const isSeparator = (cells: string[]) =>
+            cells.length > 0 && cells.every(c => c === '' || /^:?-{2,}:?$/.test(c))
+
+          const rows = tableLines.map(parseRow).filter(r => !isSeparator(r))
+          if (rows.length === 0) return
+
+          const nCols = Math.max(...rows.map(r => r.length))
+          rows.forEach(r => { while (r.length < nCols) r.push('') })
+
+          const contentWidth = doc.page.width - 100 // márgenes 50+50
+          const cellPadX = 5
+          const cellPadY = 4
+          const cellLineH = 11
+          const headSize = 9.5
+          const bodySize = 9
+
+          // Ancho natural por columna (contenido más ancho), acotado al área útil
+          const natural: number[] = []
+          for (let c = 0; c < nCols; c++) {
+            let w = 30
+            for (let r = 0; r < rows.length; r++) {
+              doc.font(r === 0 ? 'Helvetica-Bold' : 'Helvetica')
+                .fontSize(r === 0 ? headSize : bodySize)
+              w = Math.max(w, doc.widthOfString(stripInlineMd(rows[r][c])) + cellPadX * 2)
+            }
+            natural.push(Math.min(w, contentWidth * 0.6))
+          }
+
+          // Escalar proporcionalmente si excede el ancho disponible
+          let widths = natural
+          const total = natural.reduce((a, b) => a + b, 0)
+          if (total > contentWidth) {
+            const minW = Math.min(45, contentWidth / nCols)
+            const scale = (contentWidth - minW * nCols) / (total - minW * nCols)
+            widths = natural.map(w => Math.max(minW, w * scale))
+            const used = widths.reduce((a, b) => a + b, 0)
+            widths[nCols - 1] += contentWidth - used
+          }
+
+          const drawRow = (cells: string[], isHeader: boolean, rowIdx: number) => {
+            const size = isHeader ? headSize : bodySize
+            const cellLines = cells.map((c, i) =>
+              wrapCellText(stripInlineMd(c), size, widths[i] - cellPadX * 2))
+            const rowH = Math.max(...cellLines.map(ls => ls.length)) * cellLineH + cellPadY * 2
+
+            if (yPosition + rowH > doc.page.height - marginBottom) {
+              doc.addPage()
+              yPosition = doc.y
+              // Repetir el header tras el salto de página
+              if (!isHeader) drawRow(rows[0], true, 0)
+            }
+
+            const x0 = 50
+            const y0 = yPosition
+
+            // Fondo: header sólido, filas pares con franja sutil
+            if (isHeader) {
+              doc.rect(x0, y0, contentWidth, rowH).fill('#dbe4f0')
+            } else if (rowIdx % 2 === 1) {
+              doc.rect(x0, y0, contentWidth, rowH).fill('#f4f6f9')
+            }
+
+            // Texto de celdas (antes que bordes para que estos queden encima)
+            doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
+              .fontSize(size)
+              .fillColor(isHeader ? '#1f2937' : '#333333')
+            let x = x0
+            for (let i = 0; i < nCols; i++) {
+              const linesToDraw = cellLines[i]
+              let ty = y0 + cellPadY
+              for (const tl of linesToDraw) {
+                doc.text(tl, x + cellPadX, ty, { lineBreak: false })
+                ty += cellLineH
+              }
+              x += widths[i]
+            }
+
+            // Bordes: perímetro + divisiones verticales + base
+            doc.rect(x0, y0, contentWidth, rowH).lineWidth(0.7).strokeColor('#b9c4d2').stroke()
+            x = x0
+            for (let i = 0; i < nCols; i++) {
+              doc.moveTo(x, y0).lineTo(x, y0 + rowH).stroke()
+              x += widths[i]
+            }
+
+            yPosition = y0 + rowH
+          }
+
+          checkPageBreak(30)
+          rows.forEach((cells, idx) => drawRow(cells, idx === 0, idx))
+          yPosition += 10
+        }
+
+        for (let li = 0; li < lines.length; li++) {
+          const line = stripInlineMd(lines[li].trimEnd())
+
+          // Bloque de tabla markdown: consumir líneas consecutivas con '|'
+          if (!inCodeBlock && line.trim().startsWith('|')) {
+            const tableLines: string[] = []
+            while (li < lines.length && lines[li].trim().startsWith('|')) {
+              tableLines.push(lines[li])
+              li++
+            }
+            li-- // compensar el li++ del for
+            renderMarkdownTable(tableLines)
+            continue
+          }
 
           // Detectar bloques de código
           if (line.startsWith('```')) {
@@ -473,12 +605,6 @@ export class FileManagementService {
               .lineTo(doc.page.width - 50, yPosition)
               .stroke('#cccccc')
             yPosition += 15
-            continue
-          }
-
-          // Filas separadoras de tablas markdown ('|---|---|') — no aportan
-          // nada visibles en el PDF de texto
-          if (/^\|?[\s:|-]+\|[\s:|-]*$/.test(line) && line.includes('-')) {
             continue
           }
 
