@@ -255,7 +255,7 @@ export class DockerService {
           // El container terminó — leer logs
           try {
             const logs = await container.logs({ stdout: true, stderr: false })
-            return this.cleanGooseOutput(logs.toString('utf-8'))
+            return this.cleanGooseOutput(this.demuxDockerStream(logs))
           } catch (logsErr: any) {
             console.warn(`[ephemeral] logs read failed: ${logsErr.message}`)
             return ''
@@ -274,6 +274,34 @@ export class DockerService {
     // Timeout — intentar kill sin crashear si ya murió
     container.kill().catch(() => {})
     throw new Error(`Ephemeral task timed out after ${timeoutMs}ms`)
+  }
+
+  /**
+   * Demultiplexar el stream de logs de Docker.
+   *
+   * Los containers sin TTY devuelven stdout multiplexado en frames de 8 bytes:
+   * [tipo_stream(1), 0,0,0, tamaño(4 BE)]. Un toString() crudo deja pasar los
+   * bytes del tamaño como caracteres imprimibles — era la causa del caracter
+   * basura al inicio de líneas ('I| Nombre', '$## 1.') que rompía las tablas
+   * markdown de los entregables.
+   */
+  private demuxDockerStream(buffer: Buffer): string {
+    const out: Buffer[] = []
+    let offset = 0
+    while (offset + 8 <= buffer.length) {
+      const header = buffer.subarray(offset, offset + 8)
+      const frameType = header[0]
+      const payloadLength = header.readUInt32BE(4)
+      offset += 8
+      if (offset + payloadLength > buffer.length) break
+      const payload = buffer.subarray(offset, offset + payloadLength)
+      offset += payloadLength
+      // Solo frames de stdout (type 1); stderr (type 2) se descarta
+      if (frameType === 1) out.push(payload)
+    }
+    // Si no había frames válidos (stream ya crudo, p. ej. TTY), devolver tal cual
+    if (out.length === 0) return buffer.toString('utf-8')
+    return Buffer.concat(out).toString('utf-8')
   }
 
   /**
@@ -296,9 +324,16 @@ export class DockerService {
     // bytes corruptos como prefijo ('v  content:', 'c- [x]', '�- [x]').
     // Quitamos 1-3 chars no-ASCII/Latin-extended del inicio si siguen
     // inmediatamente a contenido imprimible legítimo.
-    const lines = ansiClean.split('\n').map(line =>
-      line.replace(/^[\uFFFD\u00C0-\u024F\u2000-\u206F]{1,3}(?=[\w\s#*\-\[\({"'>!¿¡@\d])/, '')
-    )
+    //
+    // Además: las líneas "content:" de tool-use a veces traen el inicio del
+    // entregable en la MISMA línea ('content: # Título…'). En vez de dropearlas
+    // enteras, se les quita el prefijo y se conserva el resto.
+    const lines = ansiClean
+      .split('\n')
+      .map(line =>
+        line.replace(/^[\uFFFD\u00C0-\u024F\u2000-\u206F]{1,3}(?=[\w\s#*\-\[\({"'>!¿¡@\d])/, '')
+            .replace(/^\s*content:\s*/, '')
+      )
 
     // Banner de Goose (en cualquier posición — puede haber líneas vacías antes)
     const bannerPatterns = [
@@ -310,15 +345,27 @@ export class DockerService {
     // bloques "content:", comandos shell/python, paths de filesystem.
     // El entregable real nunca contiene estos patrones.
     const toolNoise = [
-      (l: string) => /^\s*▸/.test(l),
+      (l: string) => /^\s*▸/.test(l) || /[▸▶]/.test(l),
       (l: string) => /─{10,}/.test(l),
-      (l: string) => /^\s*content:/.test(l),
       (l: string) => /command:/.test(l),
       (l: string) => /bash:|python3|wc -|cat <</.test(l),
       (l: string) => /\/tmp\/|\/workspace\//.test(l),
       (l: string) => /^```\s*(bash|python|shell)/.test(l),
       (l: string) => /^- \[[x ]\]/.test(l), // TODO list checkboxes
+      (l: string) => /^\S?- \[[x ]\]/.test(l), // '2- [ ] …' (con byte basura)
+      (l: string) => /^\[- \[[x ]\]/.test(l), // '[- [ ] …'
       (l: string) => /^\s*\.\s*$/.test(l), // lone dots (polling)
+      // Resultados de comandos fallidos del tool-use de Goose
+      (l: string) => /^\(no output\)/.test(l),
+      (l: string) => /^Command exited with code \d+/.test(l),
+      // UI del extension manager de Goose
+      (l: string) => /(search_available|manage_extensions|list_extensions) extensionmanager/.test(l),
+      (l: string) => /^\s*(action|extension_name):\s/.test(l),
+      // Código JS filtrado cuando Goose intenta usar code_execution
+      (l: string) => /\bcode:\s*async function/.test(l),
+      (l: string) => /encodeURIComponent|AbortSignal|=>\s*\{/.test(l),
+      (l: string) => /^\s*(const|let|return|try \{|\} catch|catch \()/.test(l) && /[;{}()]/.test(l),
+      (l: string) => /^\s*\}?\s*(return \{|\};?|\{)\s*$/.test(l),
     ]
 
     const isNoise = (l: string) =>

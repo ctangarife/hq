@@ -378,8 +378,18 @@ export class FileManagementService {
         let inCodeBlock = false
         let codeLines: string[] = []
 
+        // El renderer no interpreta markdown inline: quitar marcadores de
+        // negrita para que no aparezcan literales ('**Objetivo:**') en el PDF.
+        // Los emojis se mapean a texto o se quitan: Helvetica (WinAnsi) no
+        // tiene sus glifos y saldrían como basura ('&þ').
+        const stripInlineMd = (s: string) => s
+          .replace(/\*\*/g, '')
+          .replace(/⚠️?/g, '[!]')
+          .replace(/✅/g, '[OK]')
+          .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2B00}-\u{2BFF}]/gu, '')
+
         for (const rawLine of lines) {
-          const line = rawLine.trimEnd()
+          const line = stripInlineMd(rawLine.trimEnd())
 
           // Detectar bloques de código
           if (line.startsWith('```')) {
@@ -463,6 +473,12 @@ export class FileManagementService {
               .lineTo(doc.page.width - 50, yPosition)
               .stroke('#cccccc')
             yPosition += 15
+            continue
+          }
+
+          // Filas separadoras de tablas markdown ('|---|---|') — no aportan
+          // nada visibles en el PDF de texto
+          if (/^\|?[\s:|-]+\|[\s:|-]*$/.test(line) && line.includes('-')) {
             continue
           }
 
@@ -570,6 +586,94 @@ Responde SOLO con el texto final limpio y pulido.`,
     }
   }
 
+  /**
+   * Sanitizador determinista de outputs de especialistas.
+   *
+   * Retro-fix para outputs ya guardados en BD (y red de seguridad para
+   * futuros): limpia el ruido de sesión de Goose, repara los bytes basura
+   * que el stream multiplexado de Docker deja al inicio de línea (que
+   * rompían tablas 'I| fila' y títulos '$## 1.' del markdown) y deduplica
+   * secciones que Goose re-emitió tras reintentos.
+   */
+  private sanitizeSpecialistOutput(content: string): string {
+    let text = content
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+      .replace(/\uFFFD/g, '')
+      // Placeholder editorial que goteó del prompt al entregable
+      .replace(/\[EMOJI FIRMA\]\s*/g, '')
+
+    const isNoise = (l: string) =>
+      /^\(no output\)/.test(l) ||
+      /^Command exited with code \d+/.test(l) ||
+      /[▸▶]/.test(l) ||
+      /(search_available|manage_extensions|list_extensions) extensionmanager/.test(l) ||
+      /^\S?\s*(action|extension_name):\s/.test(l) ||
+      /\bcode:\s*async function/.test(l) ||
+      /\breturn \{/.test(l) ||
+      /\basync function\b/.test(l) ||
+      /encodeURIComponent|AbortSignal|await fetch/.test(l) ||
+      /^\s*(const|let)\s+\w+\s*=/.test(l) ||
+      /^\s*try \{\s*$/.test(l) ||
+      /}\s*catch/.test(l) ||
+      /^\s*\{\s*$/.test(l) ||
+      /^[\s}]*\}[\s;]*$/.test(l) ||
+      /^\S?- \[[x ]\]/.test(l) ||
+      /^\[- \[[x ]\]/.test(l) ||
+      /^─{10,}/.test(l) ||
+      // Chatarra suelta: 1-3 chars de puntuación o letra/dígito aislados
+      // (bytes de frames del stream que quedaron solos en una línea)
+      (/^[\W_]{1,3}$/.test(l) && !/[—…]/.test(l)) ||
+      /^[A-Za-z0-9]{1,2}$/.test(l)
+
+    const repaired = text
+      .split('\n')
+      .map(raw => {
+        let l = raw
+          // Prefijo "content:" de tool-use (a veces con byte basura delante:
+          // 'O    content: # Título…') — el entregable sigue en la misma línea
+          .replace(/^\s*\S?\s{0,4}content:\s*/, '')
+        // Byte basura del stream multiplexado pegado a sintaxis markdown
+        l = l
+          .replace(/^([^\s|])\|/, '|')          // 'I| fila' → '| fila'
+          .replace(/^[^\s#](#{1,6} )/, '$1')     // '$## 1.'  → '## 1.'
+          .replace(/^([^\s*])\*\*/, '**')        // ',**negrita**' → '**negrita**'
+          .replace(/^[A-Za-z](\d+\.\s)/, '$1')   // 'h2. ítem' → '2. ítem'
+        return l
+      })
+      .filter(l => !isNoise(l))
+
+    // Deduplicación por "firma de reinicio": Goose re-emite la misma sección
+    // tras reintentos (ej. la ficha completa apareció dos veces). Si una
+    // línea ancla (heading o metadata en negrita) se repite en la segunda
+    // mitad del documento, todo lo que sigue es el duplicado. Se corta en el
+    // MENOR índice de repetición entre todas las anclas — cortar en la
+    // primera que dispare dejaría pasar la intro de la copia duplicada.
+    const anchorOf = (l: string) => {
+      const t = l.trim()
+      if (t.length < 15) return null
+      if (/^#{1,3}\s/.test(t) || /^\*\*[^*]+\*\*/.test(t)) return t
+      return null
+    }
+    const firstSeen = new Map<string, number>()
+    let cutAt = -1
+    for (let i = 0; i < repaired.length; i++) {
+      const anchor = anchorOf(repaired[i])
+      if (!anchor) continue
+      const first = firstSeen.get(anchor)
+      if (first === undefined) {
+        firstSeen.set(anchor, i)
+      } else if (first < repaired.length * 0.4 && i > repaired.length * 0.5) {
+        if (cutAt === -1 || i < cutAt) cutAt = i
+      }
+    }
+    if (cutAt > 0) repaired.splice(cutAt)
+
+    return repaired.join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
   async consolidateMissionOutputs(missionId: string): Promise<string> {
     const missionPath = path.join(this.basePath, 'missions', missionId)
     const tasksPath = path.join(missionPath, 'tasks')
@@ -632,12 +736,10 @@ Responde SOLO con el texto final limpio y pulido.`,
         // Descartar tareas sin entregable real (ej: revisión vacía de 9 chars)
         if (!content || content.trim().length < 50) continue
 
-        // Sanitizar códigos ANSI/caracteres de control que Goose streamuea
-        content = content
-          .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-          .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
-          .replace(/^[\uFFFD]+/gm, '')
-          .replace(/^D(?=\*\*)/gm, '')
+        // Sanitizar ruido de sesión de Goose, bytes basura del stream de
+        // Docker (tablas/títulos rotos) y secciones duplicadas — ANTES del
+        // polish para que el LLM reciba texto limpio
+        content = this.sanitizeSpecialistOutput(content)
 
         // Extraer markdown si viene en code block
         let markdownContent = content
