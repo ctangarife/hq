@@ -10,7 +10,7 @@ const consolidatingId = ref<string | null>(null)
 <script setup lang="ts">
 // ref viene del bloque script superior (ámbito compartido del módulo)
 import { onMounted } from 'vue'
-import { missionsService, tasksService, attachmentsService, resourcesService, default as api } from '@/services/api'
+import { missionsService, tasksService, attachmentsService, resourcesService, workspacesService, default as api } from '@/services/api'
 import MissionDetailModal from '@/components/MissionDetailModal.vue'
 import AvatarImage from '@/components/AvatarImage.vue'
 import { getStyleForRole as getAvatarStyle } from '@/composables/useAgentAvatar'
@@ -72,6 +72,10 @@ interface HumanTask {
 }
 
 const missions = ref<Mission[]>([])
+
+// Filtro por workspace (visible si el usuario pertenece a más de uno)
+const myWorkspaces = ref<Array<{ _id: string; name: string }>>([])
+const selectedWsFilter = ref('')
 const humanTasks = ref<HumanTask[]>([])
 const showCreateModal = ref(false)
 // Modo de creación: 'content' (marketing) | 'fact_check' (verificar noticia).
@@ -173,7 +177,7 @@ const fetchMissions = async () => {
   try {
     loading.value = true
     error.value = null
-    const response = await missionsService.getAll()
+    const response = await missionsService.getAll(selectedWsFilter.value || undefined)
     missions.value = response.data
   } catch (err) {
     error.value = 'Error al cargar misiones'
@@ -603,7 +607,14 @@ const submitHumanResponse = async () => {
 onMounted(() => {
   fetchMissions()
   fetchHumanTasks()
+  // Filtro por workspace: cargar membresías (solo relevante si hay >1)
+  workspacesService.getMine()
+    .then(res => { myWorkspaces.value = res.data.workspaces || [] })
+    .catch(err => console.error('Error fetching workspaces:', err))
 })
+
+// Al cambiar el filtro, recargar misiones
+const onWsFilterChange = () => { fetchMissions() }
 </script>
 
 <template>
@@ -630,6 +641,22 @@ onMounted(() => {
         </button>
       </div>
     </header>
+
+    <!-- Filtro por workspace (solo si pertenece a más de uno) -->
+    <div v-if="myWorkspaces.length > 1" class="flex items-center gap-3 mb-6">
+      <label class="text-gray-400 text-sm whitespace-nowrap">Workspace:</label>
+      <select
+        v-model="selectedWsFilter"
+        @change="onWsFilterChange"
+        class="bg-gray-700 text-white text-sm rounded px-3 py-1.5 border border-gray-600"
+      >
+        <option value="">Todos mis workspaces ({{ myWorkspaces.length }})</option>
+        <option v-for="ws in myWorkspaces" :key="ws._id" :value="ws._id">
+          {{ ws.name }}
+        </option>
+      </select>
+      <span class="text-gray-500 text-sm">{{ missions.length }} misión{{ missions.length !== 1 ? 'es' : '' }}</span>
+    </div>
 
     <!-- Error State -->
     <div v-if="error" class="bg-red-900/30 border border-red-800 rounded-lg p-4 mb-6">

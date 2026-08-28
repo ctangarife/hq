@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { workspaceService } from '../services/workspace.service.js'
-import { WorkspaceRole } from '../models/Workspace.js'
+import Workspace, { WorkspaceRole } from '../models/Workspace.js'
 
 import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
 
@@ -31,7 +31,6 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     // Aislamiento multi-tenant: super_admin ve todos, resto solo el suyo
     const user = req.user
     if (user && user.role !== 'super_admin' && user.workspaceId) {
-      const Workspace = (await import('../models/Workspace.js')).default
       const ws = await Workspace.findById(user.workspaceId).lean()
       return res.json(ws ? [ws] : [])
     }
@@ -58,6 +57,30 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
     if (e.code === 11000) return res.status(409).json({ error: 'slug already exists' })
     next(e)
   }
+})
+
+/**
+ * GET /api/workspaces/mine
+ * Todos los workspaces del usuario (primario ∪ memberships) — alimenta el
+ * filtro de misiones cuando pertenece a más de uno.
+ */
+router.get('/mine', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const user = req.user
+    if (!user) return res.json({ workspaces: [] })
+
+    if (user.role === 'super_admin') {
+      const all = await workspaceService.listWorkspaces()
+      return res.json({ workspaces: all })
+    }
+
+    const { getUserWorkspaceIds } = await import('../middleware/workspace-filter.js')
+    const ids = await getUserWorkspaceIds(user)
+    const list = ids && ids.length
+      ? await Workspace.find({ _id: { $in: ids } }).sort({ name: 1 }).lean()
+      : []
+    res.json({ workspaces: list })
+  } catch (e) { next(e) }
 })
 
 router.get('/:id', async (req, res, next) => {

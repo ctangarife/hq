@@ -37,7 +37,8 @@ api.interceptors.response.use(
 
 // Services
 export const missionsService = {
-  getAll: () => api.get('/missions'),
+  getAll: (workspaceId?: string) =>
+    api.get(`/missions${workspaceId ? `?workspaceId=${workspaceId}` : ''}`),
   getById: (id: string) => api.get(`/missions/${id}`),
   create: (data: any) => api.post('/missions', data),
   // Enriquecedor: idea breve → brief profesional (glm-5.2), no crea nada
@@ -185,6 +186,8 @@ export const workspacesService = {
   // Proyectos dentro de un workspace
   getProjects: (id: string) => api.get(`/workspaces/${id}/projects`),
   createProject: (workspaceId: string, data: any) => api.post(`/workspaces/${workspaceId}/projects`, data),
+  // Workspaces del usuario (primario ∪ memberships)
+  getMine: () => api.get('/workspaces/mine'),
 }
 
 // Prompts editables (resolución por capas: project → workspace → global)

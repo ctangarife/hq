@@ -1,4 +1,5 @@
 import { AuthenticatedRequest } from './jwt-auth.js'
+import Workspace from '../models/Workspace.js'
 
 /**
  * Workspace Filter — Aislamiento multi-tenant real.
@@ -58,4 +59,29 @@ export function getMissionFilter(req: AuthenticatedRequest): Record<string, any>
 
   // Solo misiones de MI workspace (las globales/legacy no son visibles)
   return { workspaceId: scope.workspaceId }
+}
+
+/**
+ * Resolver TODOS los workspaces del usuario: el primario (user.workspaceId)
+ * ∪ los que lo tienen en members[] (por userId). Un usuario puede ser
+ * miembro de varios workspaces — las misiones de todos ellos son suyas.
+ *
+ * Devuelve null para super_admin (alcance global) o la lista de ids.
+ */
+export async function getUserWorkspaceIds(user: any): Promise<string[] | null> {
+  if (!user) return []
+  if (user.role === 'super_admin') return null
+
+  const ids = new Set<string>()
+  if (user.workspaceId) ids.add(user.workspaceId)
+
+  try {
+    const memberships = await Workspace.find({ 'members.userId': user.userId })
+      .select('_id').lean()
+    memberships.forEach(m => ids.add(m._id.toString()))
+  } catch (err: any) {
+    console.warn(`[workspace-filter] membership lookup failed: ${err.message}`)
+  }
+
+  return [...ids]
 }

@@ -11,7 +11,7 @@ import { litellmService } from '../services/litellm.service.js'
 import Workspace from '../models/Workspace.js'
 import Agent from '../models/Agent.js'
 import { AuthenticatedRequest } from '../middleware/jwt-auth.js'
-import { getMissionFilter, getWorkspaceScope } from '../middleware/workspace-filter.js'
+import { getWorkspaceScope, getUserWorkspaceIds } from '../middleware/workspace-filter.js'
 
 const router = Router()
 
@@ -87,9 +87,24 @@ REGLAS:
 // GET /api/missions - List all missions
 router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { status, assignedTo } = req.query
+    const { status, assignedTo, workspaceId: wsParam } = req.query
 
-    const filter: any = getMissionFilter(req) // aislamiento por workspace
+    // Aislamiento multi-workspace: el usuario ve las misiones de TODOS los
+    // workspaces a los que pertenece (primario ∪ memberships), y puede
+    // acotar con ?workspaceId= (validado contra sus membresías).
+    const filter: any = {}
+    const wsIds = await getUserWorkspaceIds(req.user)
+    if (wsIds === null) {
+      // super_admin: puede filtrar por cualquier workspace o ver todo
+      if (wsParam) filter.workspaceId = String(wsParam)
+    } else if (wsParam) {
+      if (!wsIds.includes(String(wsParam))) {
+        return res.status(403).json({ error: 'No tiene acceso a este workspace' })
+      }
+      filter.workspaceId = String(wsParam)
+    } else {
+      filter.workspaceId = { $in: wsIds.length ? wsIds : [] }
+    }
     if (status) filter.status = status
     if (assignedTo) filter.squadIds = assignedTo
 
